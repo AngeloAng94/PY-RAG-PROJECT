@@ -22,19 +22,38 @@ Chroma's ``$in`` (any-of), not a single ``$eq`` value:
 
 ``layer`` (hal/bsp/rtos/middleware/app/ui) and ``costruttore`` use the same
 any-of ``$in`` logic, so a session can pull, say, the ``ui`` and ``app`` layers
-together. ``categoria`` and ``cliente`` stay single-valued (``$eq``): a session
-targets exactly one product family / one customer.
+together.
 
-The filter is composed with Chroma's ``$and`` / ``$in`` operators so additional
-dimensions can be added without changing the store.
+``categoria`` and ``cliente`` are LAYERED FALL-THROUGH dimensions: they are
+single-valued, but their filter matches "target value OR ABSENT" so that shared
+chunks survive a narrower query. A ``comune`` chunk (indexed with
+``categoria=ABSENT``) is still returned when ``categoria=forno`` is pinned, while
+a different category like ``caffe`` is excluded. See rag/constants.py.
+
+The filter is composed with Chroma's ``$and`` / ``$in`` / ``$or`` operators so
+additional dimensions can be added without changing the store.
 """
 
 from __future__ import annotations
 
 from typing import Dict, List, Optional
 
+from .constants import ABSENT
 from .embeddings import Embedder
 from .store import ChromaStore
+
+
+def _eq_or_absent(field: str, value: str) -> Dict:
+    """Match ``field == value`` OR ``field == ABSENT`` (the "shared" sentinel).
+
+    This is the heart of the layered model: pinning ``categoria=forno`` must
+    still return shared ``comune`` chunks (stored with ``categoria=ABSENT``)
+    while EXCLUDING a different category like ``caffe``. A bare ``$eq`` would
+    drop the shared chunks; a ``$ne``/``$nin`` would wrongly admit other
+    categories (and Chroma has no ``$exists``). The explicit ``$or`` with the
+    sentinel is the precise expression. See rag/constants.py.
+    """
+    return {"$or": [{field: {"$eq": value}}, {field: {"$eq": ABSENT}}]}
 
 
 def build_where(
@@ -58,16 +77,15 @@ def build_where(
         * ``layer``       -> e.g. ["ui", "app"]
         * ``costruttore`` -> e.g. ["acme-srl"]
 
-    Single-valued (``$eq``) dimensions — pass a string:
-        * ``categoria`` (one product family)
-        * ``cliente``   (one customer)
+    Layered fall-through (``$eq`` value OR ``ABSENT``) dimensions — pass a string:
+        * ``categoria`` (one product family; shared ``comune`` chunks survive)
+        * ``cliente``   (one customer; ``comune``/``categoria`` chunks survive)
 
-    # TODO (human): modelling tension to calibrate on the real repos. When
-    # scope spans layers (comune + categoria + cliente) but ``categoria`` is
-    # also pinned with $eq, shared ``comune`` chunks that carry no categoria
-    # would be excluded by the AND. Decide whether comune chunks should be
-    # stored WITHOUT a categoria (so they survive) or whether categoria should
-    # itself become an $in including a neutral value. Left explicit on purpose.
+    DECISION (resolves the comune/categoria tension): shared chunks must NOT be
+    excluded when ``categoria`` is pinned. ``comune`` chunks are indexed with
+    ``categoria=ABSENT`` (and likewise ``cliente=ABSENT`` for non-customer code),
+    so the categoria/cliente filters match "target value OR ABSENT". A different
+    category is still excluded. board/micro stay mandatory and never fall back.
     """
     if not board or not micro:
         # Hard guard: never run an unconstrained cross-board search.
@@ -89,11 +107,12 @@ def build_where(
     if costruttore:
         clauses.append({"costruttore": {"$in": list(costruttore)}})
 
-    # Single-valued session dimensions (string -> $eq).
+    # Layered fall-through dimensions: target value OR the ABSENT sentinel, so
+    # shared/less-specific chunks are not dropped by a narrower filter.
     if categoria:
-        clauses.append({"categoria": {"$eq": categoria}})
+        clauses.append(_eq_or_absent("categoria", categoria))
     if cliente:
-        clauses.append({"cliente": {"$eq": cliente}})
+        clauses.append(_eq_or_absent("cliente", cliente))
 
     # A single clause must not be wrapped in $and (Chroma rejects 1-item $and).
     # (board+micro guarantee >= 2 clauses today; kept defensive.)

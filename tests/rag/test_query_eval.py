@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from rag.constants import ABSENT
 from rag.eval import EvalCase, recall_at_k
+from rag.indexer import index_file
 from rag.query import build_where, retrieve_relevant
 from rag.store import ChromaStore
 
@@ -24,15 +26,18 @@ def test_build_where_composes_optional_dims():
         categoria="caffe",
     )
     assert "$and" in where
-    clause_keys = [list(c.keys())[0] for c in where["$and"]]
+    clauses = where["$and"]
+    clause_keys = [list(c.keys())[0] for c in clauses]
     assert "board" in clause_keys and "micro" in clause_keys
-    assert "scope" in clause_keys and "categoria" in clause_keys
-    # scope is now a composable $in (any-of) list, not a single $eq.
-    scope_clause = next(c for c in where["$and"] if "scope" in c)
+    # scope is a composable $in (any-of) list.
+    scope_clause = next(c for c in clauses if "scope" in c)
     assert scope_clause["scope"] == {"$in": ["comune", "categoria", "cliente"]}
-    # categoria stays single-valued $eq.
-    categoria_clause = next(c for c in where["$and"] if "categoria" in c)
-    assert categoria_clause["categoria"] == {"$eq": "caffe"}
+    # categoria is now a layered fall-through: target value OR ABSENT sentinel.
+    or_clauses = [c for c in clauses if "$or" in c]
+    assert any(
+        c["$or"] == [{"categoria": {"$eq": "caffe"}}, {"categoria": {"$eq": ABSENT}}]
+        for c in or_clauses
+    )
 
 
 def test_build_where_layer_and_costruttore_use_in():
@@ -200,3 +205,122 @@ def test_omitting_scope_returns_all_layers(layered_store, fake_embedder):
     ids = {r["id"] for r in res}
     assert ids == {"comune1", "categoria1", "cliente1"}
     assert "other1" not in ids  # still board-bounded
+
+
+# --- comune fall-through (categoria == X OR ABSENT) -------------------------
+
+@pytest.fixture
+def categoria_store(tmp_path, fake_embedder):
+    """Chunks mirroring how the indexer stores them: comune carries ABSENT."""
+    s = ChromaStore(index_path=str(tmp_path / "idx"), collection_name="cat_col")
+    s.reset()
+    docs = [
+        "shared utility comune ring buffer",   # comune: categoria ABSENT
+        "oven temperature control forno",      # categoria forno
+        "coffee brewing screen caffe",         # categoria caffe
+    ]
+    metas = [
+        {"board": "ASY011", "micro": "STM32H750", "scope": "comune", "categoria": ABSENT},
+        {"board": "ASY011", "micro": "STM32H750", "scope": "categoria", "categoria": "forno"},
+        {"board": "ASY011", "micro": "STM32H750", "scope": "categoria", "categoria": "caffe"},
+    ]
+    s.add(
+        ids=["comune1", "forno1", "caffe1"],
+        embeddings=fake_embedder.embed_documents(docs),
+        documents=docs,
+        metadatas=metas,
+    )
+    return s
+
+
+def test_comune_survives_categoria_filter(categoria_store, fake_embedder):
+    # comune chunk (categoria ABSENT) returned ALONGSIDE forno; caffe excluded.
+    res = retrieve_relevant(
+        store=categoria_store,
+        embedder=fake_embedder,
+        query="anything",
+        scope=["comune", "categoria"],
+        categoria="forno",
+        board="ASY011",
+        micro="STM32H750",
+        k=10,
+    )
+    ids = {r["id"] for r in res}
+    assert "comune1" in ids  # shared code survives the categoria filter
+    assert "forno1" in ids   # target category present
+    assert "caffe1" not in ids  # a different category is still excluded
+
+
+def test_comune_survives_categoria_filter_end_to_end(tmp_path, fake_embedder):
+    """Prove the indexer actually writes categoria=ABSENT for comune files."""
+    index_path = str(tmp_path / "idx")
+    store = ChromaStore(index_path=index_path)
+    store.reset()
+
+    comune_c = tmp_path / "ringbuffer.c"
+    comune_c.write_text("void rb_init(void) { return; }\n", encoding="utf-8")
+    forno_c = tmp_path / "oven.c"
+    forno_c.write_text("void oven_loop(void) { return; }\n", encoding="utf-8")
+
+    # comune ingest: scope=comune, NO categoria provided -> indexer fills ABSENT.
+    index_file(str(comune_c), store, fake_embedder,
+               base_metadata={"board": "ASY011", "micro": "STM32H750", "scope": "comune"})
+    # categoria ingest: categoria=forno.
+    index_file(str(forno_c), store, fake_embedder,
+               base_metadata={"board": "ASY011", "micro": "STM32H750", "scope": "categoria", "categoria": "forno"})
+
+    # Sanity: the comune chunk really carries categoria=ABSENT.
+    rows = store.list_chunks(where={"categoria": {"$eq": ABSENT}})
+    assert any("rb_init" == r["metadata"].get("symbol") for r in rows)
+
+    res = retrieve_relevant(
+        store=store,
+        embedder=fake_embedder,
+        query="oven loop init",
+        scope=["comune", "categoria"],
+        categoria="forno",
+        board="ASY011",
+        micro="STM32H750",
+        k=10,
+    )
+    symbols = {r["metadata"].get("symbol") for r in res}
+    assert "rb_init" in symbols   # comune survives
+    assert "oven_loop" in symbols  # forno present
+
+
+def test_cliente_filter_keeps_comune_and_categoria(categoria_store, fake_embedder):
+    # Pinning a customer must still admit non-customer (ABSENT cliente) chunks.
+    # categoria_store chunks have no cliente key, so the indexer-equivalent here
+    # is ABSENT; emulate by adding one cliente-specific chunk.
+    categoria_store.add(
+        ids=["acme1"],
+        embeddings=fake_embedder.embed_documents(["acme custom splash"]),
+        documents=["acme custom splash"],
+        metadatas=[{"board": "ASY011", "micro": "STM32H750", "scope": "cliente",
+                    "categoria": ABSENT, "cliente": "acme"}],
+    )
+    # Give the comune/forno chunks an explicit cliente=ABSENT for this check.
+    categoria_store.add(
+        ids=["comune1", "forno1", "caffe1"],
+        embeddings=fake_embedder.embed_documents(["a", "b", "c"]),
+        documents=["a", "b", "c"],
+        metadatas=[
+            {"board": "ASY011", "micro": "STM32H750", "scope": "comune", "categoria": ABSENT, "cliente": ABSENT},
+            {"board": "ASY011", "micro": "STM32H750", "scope": "categoria", "categoria": "forno", "cliente": ABSENT},
+            {"board": "ASY011", "micro": "STM32H750", "scope": "categoria", "categoria": "caffe", "cliente": ABSENT},
+        ],
+    )
+    res = retrieve_relevant(
+        store=categoria_store,
+        embedder=fake_embedder,
+        query="anything",
+        scope=["comune", "categoria", "cliente"],
+        categoria="forno",
+        cliente="acme",
+        board="ASY011",
+        micro="STM32H750",
+        k=10,
+    )
+    ids = {r["id"] for r in res}
+    assert {"acme1", "comune1", "forno1"} <= ids  # customer + shared survive
+    assert "caffe1" not in ids  # different category still excluded

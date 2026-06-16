@@ -21,6 +21,7 @@ import os
 from typing import Dict, List, Optional
 
 from .chunker import Chunk, chunk_c_source
+from .constants import ABSENT, FALLBACK_DIMS
 from .embeddings import Embedder
 from .store import ChromaStore
 
@@ -92,6 +93,16 @@ def _derive_metadata(
     for key, value in base_metadata.items():
         if value is not None:
             meta[key] = value
+
+    # Layered fall-through dimensions (categoria, cliente): when not provided,
+    # store the ABSENT sentinel instead of leaving the key unset. This makes
+    # "shared" chunks (comune has no categoria; comune/categoria have no
+    # cliente) precisely matchable so they survive a narrower query filter.
+    # See rag/constants.py for why a sentinel is required (Chroma can't match a
+    # missing key without also matching every other value).
+    for dim in FALLBACK_DIMS:
+        if not meta.get(dim):
+            meta[dim] = ABSENT
 
     # Per-chunk intrinsic fields (always recorded).
     meta["kind"] = chunk.kind
