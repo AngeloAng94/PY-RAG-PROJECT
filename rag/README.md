@@ -86,15 +86,34 @@ Two rules make this correct:
 ## 4. Quick start
 
 ```bash
-cp .env.rag.template .env        # set RAG_* and point RAG_EMBED_BASE_URL at your local embed runtime
+pip install -r requirements-rag.txt   # self-contained deps (chromadb, tree-sitter, requests, …)
+cp .env.rag.template .env              # set RAG_* and point RAG_EMBED_BASE_URL at your local embed runtime
 python scripts/build_index.py --repo /path/to/firmware \
     --board ASY011 --micro STM32H750 --scope categoria --categoria caffe --reset
-pytest tests/rag -q              # 36 tests, fully offline (deterministic FakeEmbedder, no runtime/network)
+pytest tests/rag -q                    # 36 tests, fully offline (deterministic FakeEmbedder, no runtime/network)
 ```
 
 `.env` keys (see `.env.rag.template`): `RAG_INDEX_PATH`, `RAG_EMBED_PROVIDER`,
 `RAG_EMBED_MODEL`, `RAG_EMBED_BASE_URL`, `RAG_EMBED_API_KEY`, `RAG_TOP_K`,
 `RAG_MAX_EXAMPLE_CHARS`.
+
+### Portability
+
+The component is **self-contained and machine-independent** — copy `rag/`,
+`scripts/`, `tests/` (and `requirements-rag.txt`) anywhere and run from the
+project root.
+
+- **Pure Python 3.9+**, depends only on `chromadb`, `tree-sitter`,
+  `tree-sitter-c`, `requests` (+ optional `python-dotenv`). No FastAPI / Mongo /
+  framework coupling — those belong to a separate scaffold and are not used.
+- **No hardcoded paths or environment assumptions.** Everything tunable comes
+  from `RAG_*` env vars with sensible defaults; the index path is relative
+  (`./.rag_index` by default). Scripts resolve the repo root from their own
+  location, so they work from any directory.
+- **No network needed to run the tests** (deterministic `FakeEmbedder`). Only
+  real indexing/retrieval needs your local embedding runtime (configurable URL).
+- Verified to run identically outside the development environment (tests pass
+  from a fresh copy in another directory).
 
 ---
 

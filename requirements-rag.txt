@@ -1,0 +1,17 @@
+# Runtime dependencies for the rag/ retrieval component.
+# Self-contained: this is all you need to run rag/ on any machine.
+#   pip install -r requirements-rag.txt
+#
+# Pinned to the versions this code was developed and tested against.
+# The tree-sitter bootstrap in rag/chunker.py is version-tolerant, so newer
+# 0.2x tree-sitter releases also work, but these are the verified ones.
+
+chromadb==1.5.9
+tree-sitter==0.25.2
+tree-sitter-c==0.24.2
+requests==2.34.2
+python-dotenv==1.2.2   # optional at runtime (config.py degrades gracefully without it)
+
+# --- dev/test only (not required to run the engine) ---
+# pip install pytest
+pytest>=8.0.0
