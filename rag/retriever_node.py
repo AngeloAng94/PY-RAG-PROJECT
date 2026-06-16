@@ -85,6 +85,26 @@ def _session_dimension(state: AgentState, key: str) -> str:
     return os.environ.get(f"RAG_SESSION_{key.upper()}", "").strip()
 
 
+def _session_scope_list(state: AgentState):
+    """Resolve the composable ``scope`` dimension as a list of layers (or None).
+
+    Accepts either a real list on the state (preferred, set by the classifier)
+    or a comma-separated string from state/env (e.g. "comune,categoria,cliente").
+    Returns ``None`` to mean "all scopes".
+    """
+    raw = state.get("scope")  # type: ignore[arg-type]
+    if raw is None or raw == "":
+        raw = os.environ.get("RAG_SESSION_SCOPE", "").strip()
+    if not raw:
+        return None
+    if isinstance(raw, (list, tuple)):
+        items = [str(s).strip() for s in raw]
+    else:
+        items = [s.strip() for s in str(raw).split(",")]
+    items = [s for s in items if s]
+    return items or None
+
+
 def _read_target_file(state: AgentState) -> str:
     """Return the target file content, preferring already-loaded state.
 
@@ -141,7 +161,9 @@ def retrieve(state: AgentState) -> AgentState:
     # Resolve the mandatory + optional session dimensions.
     board = _session_dimension(state, "board")
     micro = _session_dimension(state, "micro")
-    scope = _session_dimension(state, "scope") or None
+    # scope is a COMPOSABLE list of layers (comune/categoria/cliente). Accept a
+    # list directly on state, or a comma-separated env/string fallback.
+    scope = _session_scope_list(state)
     categoria = _session_dimension(state, "categoria") or None
     cliente = _session_dimension(state, "cliente") or None
 

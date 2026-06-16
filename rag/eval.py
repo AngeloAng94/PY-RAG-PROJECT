@@ -29,7 +29,7 @@ class EvalCase:
     micro: str
     # ids the human considers a correct hit (any one in top-k counts).
     expected_ids: List[str]
-    scope: Optional[str] = None
+    scope: Optional[List[str]] = None  # composable layers, e.g. ["comune", "cliente"]
     categoria: Optional[str] = None
     cliente: Optional[str] = None
     note: str = ""
