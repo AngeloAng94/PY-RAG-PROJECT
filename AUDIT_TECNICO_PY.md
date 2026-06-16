@@ -1,7 +1,7 @@
 # AUDIT TECNICO — RAG Infrastructure (embedded-code-generation agent)
 **Data**: 2026-06-16
 **Versione codebase**: git `main` @ `bb771dd` (10 commit totali; nessun tag SemVer presente → versione formale N/D)
-**Autore**: Audit automatico
+**Autore**: Revisione tecnica interna
 **Stato**: scaffolding completo e revisionato · 36 test verdi (offline) · iterazioni concluse (hold)
 
 > Ambito dell'audit: pacchetto `rag/` + `scripts/` + `tests/rag/` (lo scaffolding di retrieval consegnato).
