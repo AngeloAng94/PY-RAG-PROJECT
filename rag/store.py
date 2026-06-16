@@ -106,6 +106,38 @@ class ChromaStore:
             )
         return out
 
+    def list_chunks(
+        self,
+        where: Optional[Dict] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        include_documents: bool = False,
+    ) -> List[Dict]:
+        """READ-ONLY metadata dump (no vector search, no embedding needed).
+
+        Uses Chroma's ``get`` to page through stored chunks, optionally narrowed
+        by the same composed ``where`` filter as :meth:`query`. Returns dicts
+        ``{id, metadata[, document]}``. Used by the offline ``rag.inspect`` CLI
+        to audit what landed in each scope and to build the real eval set.
+        """
+        include = ["metadatas"] + (["documents"] if include_documents else [])
+        res = self._collection.get(
+            where=where or None,
+            limit=limit,
+            offset=offset,
+            include=include,
+        )
+        ids = res.get("ids") or []
+        metas = res.get("metadatas") or []
+        docs = res.get("documents") or []
+        out: List[Dict] = []
+        for i, _id in enumerate(ids):
+            row = {"id": _id, "metadata": metas[i] if i < len(metas) else {}}
+            if include_documents:
+                row["document"] = docs[i] if i < len(docs) else ""
+            out.append(row)
+        return out
+
     # -- maintenance ---------------------------------------------------------
     def count(self) -> int:
         return self._collection.count()

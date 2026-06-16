@@ -16,6 +16,7 @@ and every node signature stay **unchanged**: `retrieve(state: AgentState) -> Age
 | `rag/query.py` | **Online** retrieval. Builds the layered metadata filter (board/micro **mandatory**) then ranks by similarity. |
 | `rag/retriever_node.py` | Drop-in `retrieve` node. Target file in full + budgeted retrieved examples → `full_context`, plus additive `retrieved_chunks` / `retrieval_debug`. |
 | `rag/eval.py` | `recall_at_k` harness over a placeholder `EVAL_SET`. |
+| `rag/inspect.py` | **Read-only, offline** CLI to dump chunk ids + metadata from a built index (optional board/scope/cliente/kind filters, `--group-by`, `--json`, `--show-text`). For auditing scope leakage and seeding the real `EVAL_SET`. |
 | `scripts/build_index.py` | CLI to build the index with base metadata. |
 
 ## Knowledge model
