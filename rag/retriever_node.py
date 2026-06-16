@@ -28,6 +28,24 @@ session. In the real system the classifier populates these. To keep this node
 drop-in WITHOUT touching the classifier, we read them from ``state`` if present
 and otherwise fall back to env vars. Wiring to the real classifier is out of
 scope (see TODO).
+
+REPAIR LOOP
+-----------
+The graph re-enters this node on the repair loop (plan -> retrieve) after a
+failed compile. In that case we ENRICH the query with a concise form of the
+compile error (see ``_compile_error_hint``) so retrieval surfaces fix-relevant
+examples instead of repeating the first pass's results.
+
+WIRING NOTES (human) — to reconcile at integration time, not fixed here:
+  * NAME MISMATCH: this function is ``retrieve`` but the existing graph registers
+    the node as ``retrieve_context``. At wiring time, either rename this function
+    or register it under the graph's expected key (e.g.
+    ``builder.add_node("retrieve_context", retrieve)``). Behaviour is identical;
+    only the registered name differs.
+  * target_headers: the old node also loaded the target's ``.h`` files; this
+    version loads only the target ``.c`` whole. Decide at wiring whether the
+    header files (``state["target_headers"]``) should also be included verbatim
+    in ``full_context`` (they are the API surface the edit must respect).
 """
 
 from __future__ import annotations
@@ -147,6 +165,51 @@ def _assemble_examples(chunks: List[Dict[str, Any]], budget_chars: int) -> str:
     return "\n".join(parts)
 
 
+_ERROR_HINT_MAX_CHARS = 300  # keep the appended error snippet small (embedding input)
+
+
+def _compile_error_hint(state: AgentState) -> str:
+    """Return a concise compile-error snippet for repair-pass enrichment, or ''.
+
+    The graph re-enters ``retrieve`` on the repair loop (plan -> retrieve) after a
+    failed compile. Without this, the query is still the original request and the
+    RAG returns the SAME examples — ignoring the actual error to fix. We pull a
+    short error string from ``compile_result`` (stderr/stdout/message) or, as a
+    fallback, from ``notes``, prefer lines that mention "error", keep only the
+    first few, and hard-cap the length so we never blow the embedding input.
+
+    Returns '' when there is no error (first pass, or a successful compile) so the
+    query is left unchanged.
+    """
+    text = ""
+    cr = state.get("compile_result")
+    if isinstance(cr, dict):
+        if cr.get("success") is True:
+            return ""  # compiled fine -> nothing to steer toward
+        text = " ".join(
+            str(cr.get(key, "")) for key in ("stderr", "stdout", "message", "error")
+        ).strip()
+    elif isinstance(cr, str):
+        text = cr.strip()
+
+    if not text:
+        notes = state.get("notes")
+        if isinstance(notes, (list, tuple)):
+            text = " ".join(str(n) for n in notes).strip()
+        elif notes:
+            text = str(notes).strip()
+
+    if not text:
+        return ""
+
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    error_lines = [ln for ln in lines if "error" in ln.lower()]
+    hint = " ".join((error_lines or lines)[:3])
+    if len(hint) > _ERROR_HINT_MAX_CHARS:
+        hint = hint[:_ERROR_HINT_MAX_CHARS].rstrip() + "…"
+    return hint
+
+
 def retrieve(state: AgentState) -> AgentState:
     """Drop-in ``retrieve`` node backed by the RAG engine.
 
@@ -169,11 +232,20 @@ def retrieve(state: AgentState) -> AgentState:
 
     # The semantic query: prefer an explicit modification intent, else the
     # raw user request, else the target view name.
-    query_text = (
+    base_query = (
         state.get("user_request")
         or state.get("target_view")
         or ""
     )
+
+    # REPAIR PASS: if a previous compile failed, append a concise form of the
+    # error so retrieval surfaces fix-relevant examples instead of repeating the
+    # first pass's results. Kept short via _ERROR_HINT_MAX_CHARS.
+    error_hint = _compile_error_hint(state)
+    if error_hint:
+        query_text = f"{base_query}\nfix compile error: {error_hint}".strip()
+    else:
+        query_text = base_query
 
     retrieved: List[Dict[str, Any]] = []
     debug: Dict[str, Any] = {
@@ -187,6 +259,8 @@ def retrieve(state: AgentState) -> AgentState:
         "index_path": cfg.index_path,
         "embedder": None,
         "query": query_text,
+        "repair_pass": bool(error_hint),
+        "error_hint": error_hint or None,
         "status": "ok",
         "error": None,
     }
