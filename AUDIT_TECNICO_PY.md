@@ -1,7 +1,8 @@
 # AUDIT TECNICO — RAG Infrastructure (embedded-code-generation agent)
 **Data**: 2026-06-16
-**Versione codebase**: git `main` @ `9d8398c` (6 commit totali; nessun tag SemVer presente → versione formale N/D)
+**Versione codebase**: git `main` @ `bb771dd` (10 commit totali; nessun tag SemVer presente → versione formale N/D)
 **Autore**: Audit automatico
+**Stato**: scaffolding completo e revisionato · 36 test verdi (offline) · iterazioni concluse (hold)
 
 > Ambito dell'audit: pacchetto `rag/` + `scripts/` + `tests/rag/` (lo scaffolding di retrieval consegnato).
 > Le cartelle `backend/` e `frontend/` sono lo **scaffold pre-esistente** dell'ambiente (template FastAPI/React non collegato a `rag/`) e sono trattate separatamente dove pertinente.
@@ -21,6 +22,7 @@
                                             │ (drop-in, contratto invariato)
                                             ▼
                             rag/retriever_node.py :: retrieve(state)->state
+                            (repair loop: arricchisce la query con l'errore di compile)
                                             │
               ┌─────────────────────────────┼─────────────────────────────┐
               ▼                             ▼                             ▼
@@ -101,8 +103,10 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 │       ├── test_chunker.py       # 10 test
 │       ├── test_store.py         # 4 test
 │       ├── test_query_eval.py    # 13 test
-│       ├── test_retriever_node.py# 3 test
+│       ├── test_retriever_node.py# 5 test (incl. repair loop)
 │       └── test_inspect.py       # 4 test
+├── AUDIT_TECNICO_PY.md           # questo documento
+├── INTEGRATION.md                # checklist di cablaggio all'agente reale
 ├── .env.rag.template             # template chiavi RAG_*
 ├── backend/  frontend/           # scaffold pre-esistente (NON collegato a rag/)
 └── memory/   test_reports/       # artefatti di piattaforma
@@ -120,13 +124,15 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 | `rag/store.py` | 168 | `ChromaStore`: `add/query/reset/count/list_chunks`; filtri `$and`/`$or`/`$in`; sanitizzazione metadati. |
 | `rag/indexer.py` | 179 | Ingest offline: `index_file`, `index_repo`, `infer_layer`, derivazione metadati + fallback `ABSENT`. |
 | `rag/query.py` | 160 | `build_where` (filtro a strati) + `retrieve_relevant`; board/micro obbligatori; ordine filtro→similarità. |
-| `rag/retriever_node.py` | 240 | Nodo drop-in `retrieve`; file target intero + esempi a budget; campi additivi `retrieved_chunks`/`retrieval_debug`; import tollerante di `AgentState`. |
+| `rag/retriever_node.py` | 314 | Nodo drop-in `retrieve`; file target intero + esempi a budget; **arricchimento query nel repair loop** (`_compile_error_hint`, cap 300 char); campi additivi `retrieved_chunks`/`retrieval_debug` (incl. `repair_pass`, `error_hint`); import tollerante di `AgentState`; note di wiring documentate. |
 | `rag/eval.py` | 113 | `EvalCase`, `recall_at_k`, `RecallReport`; `EVAL_SET` con 2 placeholder. |
 | `rag/inspect.py` | 163 | CLI read-only: dump id+metadati, filtri, `--group-by`, `--json`, `--show-text`. |
-| `scripts/build_index.py` | 109 | CLI ingest: argomenti board/micro (obbligatori) + scope/categoria/cliente/costruttore + `--reset`. |
-| **Totale codice `rag/` + `scripts/`** | **1870** | — |
-| **Totale `tests/rag/`** | **801** | 34 funzioni di test |
-| **Totale complessivo** | **2671** | (incl. file `__init__`) |
+| `scripts/build_index.py` | 124 | CLI ingest: board/micro (obbligatori) + scope/categoria/cliente/costruttore + `--reset`; **normalizza a `ABSENT` le dimensioni categoria/cliente omesse** e stampa una nota esplicita. |
+| **Totale codice `rag/` + `scripts/`** | **1959** | — |
+| **Totale `tests/rag/`** | **849** | 36 funzioni di test |
+| **Totale complessivo** | **2808** | (incl. file `__init__`) |
+
+> Documenti di supporto nella root: `INTEGRATION.md` (checklist di cablaggio all'agente reale), `README.md` del pacchetto (`rag/README.md`), `.env.rag.template`.
 
 ---
 
@@ -186,16 +192,16 @@ Nel codice non sono presenti `enum.Enum` Python; i tipi categoriali sono **costa
 
 ### 5.1 Test automatici
 
-Suite eseguita offline con `FakeEmbedder` deterministico (nessun runtime/rete). Esito: **34 passed** (1 warning di deprecation proveniente da OpenTelemetry/Chroma, non dal codice del progetto).
+Suite eseguita offline con `FakeEmbedder` deterministico (nessun runtime/rete). Esito: **36 passed** (1 warning di deprecation proveniente da OpenTelemetry/Chroma, non dal codice del progetto).
 
 | Area | Test | Stato |
 |---|---:|---|
 | Chunking (`test_chunker.py`) | 10 | PASS — kinds semantici, simboli funzione, `ai_block` (tag/ripetuti/END mancante), `file_context` (include+globali), doc-comment, range righe |
 | Store (`test_store.py`) | 4 | PASS — add/count, filtro board, filtro composto `$or`, reset |
 | Query + Eval (`test_query_eval.py`) | 13 | PASS — board/micro obbligatori, `$in` su scope/layer/costruttore, composizione strati, fall-through comune (`X OR ABSENT`) anche end-to-end via indexer, recall@k |
-| Retriever node (`test_retriever_node.py`) | 3 | PASS — popolamento `full_context`+debug, cap budget, skip senza board/micro |
+| Retriever node (`test_retriever_node.py`) | 5 | PASS — popolamento `full_context`+debug, cap budget, skip senza board/micro, **arricchimento query nel repair loop**, nessun arricchimento su compile riuscito |
 | Inspect CLI (`test_inspect.py`) | 4 | PASS — `list_chunks` metadati/filtro/testo, `--json`, `--group-by` |
-| **Totale** | **34** | **PASS** |
+| **Totale** | **36** | **PASS** |
 
 Copertura di codice (coverage %) misurata: N/D (non configurata `pytest-cov`).
 
@@ -214,8 +220,11 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 | 3 | `f98799c` | Fix `chunker`: (a) `file_context` per include/globali/prototipi/assegnazioni globali; (b) scan riga-per-riga degli `ai_block` (tag ripetuti, END mancante gestito); (c) doc-comment in testa; +6 test (25 PASS) |
 | 4 | `fadf69a` | `query.scope` diventa lista componibile con `$in`; aggiunti filtri `layer` e `costruttore` (`$in`); board/micro restano obbligatori; +6 test (31 PASS) |
 | 5 | `9d8398c` | Fall-through `comune`: `constants.py` (sentinel `ABSENT`), indexer scrive `categoria`/`cliente=ABSENT` quando assenti, `query` filtra `X OR ABSENT`; +3 test (34 PASS) |
+| 6 | `914e678`/`ece23d3` | `build_index.py` normalizza a `ABSENT` le dimensioni categoria/cliente omesse e stampa una nota; sezione "Populating the index" nel README con la regola del codice condiviso |
+| 7 | `e514a53` | Repair loop: `retriever_node` arricchisce la query con una forma concisa dell'errore di compile (`_compile_error_hint`, cap 300 char); debug `repair_pass`/`error_hint`; note di wiring documentate; +2 test (36 PASS) |
+| 8 | `bb771dd` | `INTEGRATION.md` (checklist di cablaggio all'agente reale); chiusura iterazioni di scaffolding (hold) |
 
-*Nota: la mappatura step→commit è ricostruita dalla cronologia (`Initial commit` + 5 auto-commit) ed è indicativa.*
+*Nota: la mappatura step→commit è ricostruita dalla cronologia (`Initial commit` + 9 auto-commit) ed è indicativa.*
 
 ---
 
@@ -223,7 +232,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 
 | ID | Area | Problema | Priorità |
 |---|---|---|---|
-| DT-01 | Integrazione agente | `AgentState`/dimensioni di sessione (board/micro/scope) non ancora cablate al classificatore reale; lette da `state`/env con fallback (`# TODO (human)`). Esplicitamente fuori ambito ma bloccante per l'uso in produzione. | P1 |
+| DT-01 | Integrazione agente | `AgentState`/dimensioni di sessione (board/micro/scope) non ancora cablate al classificatore reale; lette da `state`/env con fallback (`# TODO (human)`). Fuori ambito ma bloccante per la produzione. **Passi di cablaggio ora documentati in `INTEGRATION.md`** (nome nodo `retrieve` vs `retrieve_context`, `target_headers`, popolamento dimensioni, `build_index.py` su repo reale). | P1 |
 | DT-02 | Qualità retrieval | `EVAL_SET` contiene solo 2 placeholder; recall@k non misurabile su casi reali finché non popolato. | P1 |
 | DT-03 | Metadati da path | `infer_layer` è euristica iniziale; da calibrare sul layout reale dei repo (`# TODO (human)`). | P1 |
 | DT-04 | Chunking | Tuning strategia chunking (commenti doc, funzioni molto grandi, contesto a livello file) da calibrare (`# TODO (human)`). | P2 |
@@ -270,7 +279,8 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 - Budget di contesto applicato (mai caricamento illimitato); il file target resta sempre intero ma gli esempi sono limitati da `RAG_MAX_EXAMPLE_CHARS`.
 - Chunking semantico solido (tree-sitter) con gestione robusta degli `ai_block` (tag ripetuti, END mancante senza "swallow" del file).
 - Modello a strati componibile (`$in` su scope/layer/costruttore) e fall-through `comune` corretto e testato anche end-to-end.
-- Suite di test offline deterministica (34 PASS) eseguibile senza runtime/rete grazie al `FakeEmbedder`.
+- Repair loop consapevole dell'errore: la query viene arricchita con una forma concisa (cap 300 char) dell'errore di compile, così il retrieval propone esempi pertinenti alla correzione invece di ripetere il primo passaggio.
+- Suite di test offline deterministica (36 PASS) eseguibile senza runtime/rete grazie al `FakeEmbedder`.
 
 **Rischi tecnici**
 - Dipendenza da un runtime di embedding esterno non incluso: senza di esso il percorso online reale non è esercitabile (mitigato nei test dal fake, ma non in produzione).
@@ -283,7 +293,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 2. Cablare le dimensioni di sessione dal classificatore reale e indicizzare un repo pilota per validare `infer_layer` e il modello a strati.
 3. Introdurre CI minima (lint + pytest) e `pytest-cov`, e valutare retry/backoff verso il runtime embedding.
 
-Nel complesso: scaffolding maturo e pronto per la revisione umana e l'estensione; il debito residuo è prevalentemente di **calibrazione di dominio** (P1/P2 attesi) più alcune voci di **igiene di progetto** (P3), senza criticità bloccanti nel codice consegnato.
+Nel complesso: scaffolding maturo, revisionato e in stato di **hold** (iterazioni concluse), pronto per la revisione umana e l'estensione; il debito residuo è prevalentemente di **calibrazione di dominio** (P1/P2 attesi) più alcune voci di **igiene di progetto** (P3), senza criticità bloccanti nel codice consegnato. Il prossimo passo utile (`INTEGRATION.md`) richiede un indice reale e un `EVAL_SET` reale su cui misurare.
 
 ---
-*Fine audit tecnico. Ultimo aggiornamento: 2026-06-16 (git `main` @ `9d8398c`).*
+*Fine audit tecnico. Ultimo aggiornamento: 2026-06-16 (git `main` @ `bb771dd`).*
