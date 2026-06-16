@@ -36,6 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from rag.config import load_config  # noqa: E402
+from rag.constants import ABSENT, FALLBACK_DIMS  # noqa: E402
 from rag.embeddings import get_embedder  # noqa: E402
 from rag.indexer import index_repo  # noqa: E402
 from rag.store import ChromaStore  # noqa: E402
@@ -80,6 +81,15 @@ def main(argv=None) -> int:
         "micro": args.micro,
     }
 
+    # Shared-code rule: a human who omits --categoria / --cliente means "this is
+    # shared code". We tag those dimensions with the ABSENT sentinel explicitly
+    # (never leave them blank) so the layered filter keeps them on a narrower
+    # query instead of silently excluding them. The indexer also enforces this,
+    # but we normalise here too so the CLI output shows exactly what gets stored.
+    shared_dims = [d for d in FALLBACK_DIMS if not base_metadata.get(d)]
+    for dim in shared_dims:
+        base_metadata[dim] = ABSENT
+
     store = ChromaStore(index_path=cfg.index_path)
     embedder = get_embedder(cfg)
 
@@ -87,6 +97,11 @@ def main(argv=None) -> int:
     print(f"[build_index] index_path={cfg.index_path}")
     print(f"[build_index] embedder={embedder.signature}")
     print(f"[build_index] base_metadata={base_metadata}")
+    if shared_dims:
+        print(
+            f"[build_index] note: {shared_dims} not provided -> tagged as "
+            f"shared (ABSENT={ABSENT!r}); these chunks survive narrower filters."
+        )
     if args.reset:
         print("[build_index] reset=True (collection will be wiped first)")
 
