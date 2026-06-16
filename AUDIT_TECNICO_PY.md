@@ -74,6 +74,8 @@ nettamente separati:
 
 Principio guida "local-first": di default nessun dato lascia la macchina (embedder locale, telemetria Chroma disabilitata). Lo **stesso** embedder è usato per indicizzazione e query. Vincolo di dominio forte: `board`/`micro` obbligatori — mai attraversare il confine di board.
 
+**Portabilità**: componente auto-contenuto e indipendente dalla macchina. Pure Python 3.9+, dipende solo da `chromadb`, `tree-sitter`, `tree-sitter-c`, `requests` (+ `python-dotenv` opzionale), dichiarate in `requirements-rag.txt`. Nessun percorso assoluto né accoppiamento a FastAPI/Mongo/ambiente; gli script ricavano la root dalla propria posizione e l'index path è relativo. Verificato eseguendo la suite (36 PASS) da una copia in una directory diversa da quella di sviluppo.
+
 ---
 
 ## 2. STRUTTURA DEL CODICE
@@ -107,6 +109,7 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 │       └── test_inspect.py       # 4 test
 ├── AUDIT_TECNICO_PY.md           # questo documento
 ├── INTEGRATION.md                # checklist di cablaggio all'agente reale
+├── requirements-rag.txt          # dipendenze AUTO-CONTENUTE del componente (portabilità)
 ├── .env.rag.template             # template chiavi RAG_*
 ├── backend/  frontend/           # scaffold pre-esistente (NON collegato a rag/)
 └── memory/   test_reports/       # artefatti di piattaforma
@@ -242,7 +245,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 | DT-08 | Modello dati comune/categoria | Soluzione sentinel `ABSENT` adottata perché Chroma non sa filtrare "chiave assente" (no `$exists`; `$ne`/`$nin` ammettono altri valori). Decisione corretta ma da validare sui dati reali per coerenza di ingest. | P2 |
 | DT-09 | Coverage | Nessuna misura di code coverage configurata. | P3 |
 | DT-10 | CI/CD | Assenza di pipeline automatica (lint/test su push). | P3 |
-| DT-11 | Dipendenze | `requirements.txt` condiviso con lo scaffold backend (vincoli misti `==`/`>=`); nessun gruppo/extra dedicato a `rag/`. | P3 |
+| DT-11 | Dipendenze | Manifest dedicato e auto-contenuto `requirements-rag.txt` (versioni pinnate) **presente** → componente installabile/portabile altrove. Residuo minore: `backend/requirements.txt` resta condiviso con lo scaffold (vincoli misti `==`/`>=`); nessun lockfile/`pyproject.toml` formale. | P3 |
 | DT-12 | Warning deprecation | DeprecationWarning OpenTelemetry (dipendenza transitiva di Chroma) nei test; non bloccante. | P3 |
 
 ---
@@ -280,6 +283,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 - Chunking semantico solido (tree-sitter) con gestione robusta degli `ai_block` (tag ripetuti, END mancante senza "swallow" del file).
 - Modello a strati componibile (`$in` su scope/layer/costruttore) e fall-through `comune` corretto e testato anche end-to-end.
 - Repair loop consapevole dell'errore: la query viene arricchita con una forma concisa (cap 300 char) dell'errore di compile, così il retrieval propone esempi pertinenti alla correzione invece di ripetere il primo passaggio.
+- Portabilità verificata: componente auto-contenuto (`requirements-rag.txt`), pure Python, senza percorsi assoluti né accoppiamento all'ambiente; suite eseguita con successo anche da una directory esterna a quella di sviluppo.
 - Suite di test offline deterministica (36 PASS) eseguibile senza runtime/rete grazie al `FakeEmbedder`.
 
 **Rischi tecnici**
