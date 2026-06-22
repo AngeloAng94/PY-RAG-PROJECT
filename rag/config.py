@@ -15,6 +15,8 @@ Recognised ``.env`` keys (see ``.env.rag.template``):
     RAG_EMBED_API_KEY       Optional bearer token (local runtimes ignore it).
     RAG_TOP_K               Default number of chunks to retrieve.
     RAG_MAX_EXAMPLE_CHARS   Hard budget for retrieved example text in context.
+    RAG_EMBED_TIMEOUT       Per-request embedding HTTP timeout, seconds.
+    RAG_MAX_CHUNK_CHARS     Upper bound on a single chunk's length (split above).
 """
 
 from __future__ import annotations
@@ -43,6 +45,13 @@ _DEFAULTS = {
     "RAG_EMBED_API_KEY": "",
     "RAG_TOP_K": "5",
     "RAG_MAX_EXAMPLE_CHARS": "8000",
+    # Local CPU embedding can take far longer than 60s per request; 300s is a
+    # safer default so a slow-but-working request doesn't crash a long build.
+    "RAG_EMBED_TIMEOUT": "300",
+    # Upper bound on a single chunk's character length. A huge function is split
+    # into sequential sub-chunks (at line boundaries) so it can't stall the
+    # embedder or exceed model input limits.
+    "RAG_MAX_CHUNK_CHARS": "12000",
 }
 
 
@@ -61,6 +70,8 @@ class RagConfig:
     embed_api_key: str
     top_k: int
     max_example_chars: int
+    embed_timeout: int
+    max_chunk_chars: int
 
 
 def load_config() -> RagConfig:
@@ -74,4 +85,6 @@ def load_config() -> RagConfig:
         embed_api_key=_get("RAG_EMBED_API_KEY"),
         top_k=int(_get("RAG_TOP_K")),
         max_example_chars=int(_get("RAG_MAX_EXAMPLE_CHARS")),
+        embed_timeout=int(_get("RAG_EMBED_TIMEOUT")),
+        max_chunk_chars=int(_get("RAG_MAX_CHUNK_CHARS")),
     )

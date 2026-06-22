@@ -85,8 +85,11 @@ class OpenAICompatibleEmbedder(Embedder):
         base_url: str,
         model: str,
         api_key: Optional[str] = None,
-        timeout: int = 60,
+        timeout: int = 300,
     ) -> None:
+        # timeout is in SECONDS and is supplied by the factory from
+        # RAG_EMBED_TIMEOUT. Local CPU embedding of a large input can take
+        # minutes, so this must not be a low hard-coded value.
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key = api_key or None
@@ -193,6 +196,7 @@ def get_embedder(config: Optional[RagConfig] = None) -> Embedder:
             base_url=cfg.embed_base_url,
             model=cfg.embed_model,
             api_key=cfg.embed_api_key,
+            timeout=cfg.embed_timeout,
         )
     # Cloud / future providers construct themselves from config.
     return provider_cls(config=cfg)

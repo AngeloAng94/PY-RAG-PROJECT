@@ -259,23 +259,91 @@ def _leading_comment_nodes(pending_comments: list, node) -> list:
     return []
 
 
+def _split_oversized_chunk(chunk: "Chunk", max_chunk_chars: int) -> List["Chunk"]:
+    """Split a chunk longer than ``max_chunk_chars`` into sequential sub-chunks.
+
+    Splitting happens ONLY at line boundaries (never mid-line), so each
+    sub-chunk stays valid-looking C and the embedder/model input limit is
+    respected. Metadata is preserved and the continuation is marked:
+
+      * ``symbol`` becomes ``"<symbol>#part<N>"`` (or ``"<kind>#part<N>"`` when
+        the chunk had no symbol),
+      * ``metadata`` gains ``part_index`` (1-based), ``part_total`` and
+        ``chunk_split=True``.
+
+    A normal-sized chunk is returned unchanged (single-element list). A single
+    line longer than the cap cannot be split further and is kept whole — the
+    one place where the cap may be exceeded, by design (we never cut mid-line).
+    """
+    if len(chunk.text) <= max_chunk_chars:
+        return [chunk]
+
+    lines = chunk.text.split("\n")
+
+    # Greedily group lines into segments whose joined length stays within cap.
+    segments: List[tuple] = []  # (start_idx, end_idx) inclusive, into `lines`
+    cur_start = 0
+    cur_len = 0
+    for idx, line in enumerate(lines):
+        addition = len(line) if idx == cur_start else len(line) + 1  # +1 = "\n"
+        if idx > cur_start and cur_len + addition > max_chunk_chars:
+            segments.append((cur_start, idx - 1))
+            cur_start = idx
+            cur_len = len(line)
+        else:
+            cur_len += addition
+    segments.append((cur_start, len(lines) - 1))
+
+    # No real split possible (single oversized line) -> keep the chunk whole.
+    if len(segments) == 1:
+        return [chunk]
+
+    total = len(segments)
+    base_symbol = chunk.symbol or chunk.kind
+    out: List[Chunk] = []
+    for part_index, (s, e) in enumerate(segments, start=1):
+        meta = dict(chunk.metadata)
+        meta["part_index"] = part_index
+        meta["part_total"] = total
+        meta["chunk_split"] = True
+        out.append(
+            Chunk(
+                text="\n".join(lines[s : e + 1]),
+                kind=chunk.kind,
+                symbol=f"{base_symbol}#part{part_index}",
+                start_line=chunk.start_line + s,
+                end_line=chunk.start_line + e,
+                metadata=meta,
+            )
+        )
+    return out
+
+
 def chunk_c_source(
     source: str,
     base_metadata: Optional[Dict] = None,
+    max_chunk_chars: Optional[int] = None,
 ) -> List[Chunk]:
     """Parse ``source`` and return a list of semantic :class:`Chunk` objects.
 
     ``base_metadata`` is shallow-copied into every chunk's ``metadata`` so the
     caller (indexer) can attach board/micro/layer/etc. up front.
 
+    ``max_chunk_chars`` (when provided) caps a single chunk's length: any chunk
+    longer than it is split into sequential sub-chunks at line boundaries (see
+    :func:`_split_oversized_chunk`). When ``None`` (default), no cap is applied
+    and behaviour is identical to before — so existing callers are unaffected.
+    The indexer passes ``RAG_MAX_CHUNK_CHARS`` here.
+
     The result contains BOTH top-level declarations and ai_block regions. The
     two can overlap (an AI block may sit inside a function), which is
     intentional — we want the AI block retrievable on its own.
 
     # TODO (human): chunking strategy tuning. Decisions to calibrate on the
-    # real codebase: whether to include leading doc comments with each chunk,
-    # how to handle very large functions, and whether to also index file-level
-    # context (includes / global defines) as a synthetic chunk.
+    # real codebase: whether to include leading doc comments with each chunk and
+    # whether to also index file-level context (includes / global defines) as a
+    # synthetic chunk. (Very large functions are now bounded by
+    # RAG_MAX_CHUNK_CHARS; tune that value on the real repositories.)
     """
     parser = _new_parser()
     source_bytes = source.encode("utf-8")
@@ -346,6 +414,14 @@ def chunk_c_source(
 
     # AI marker blocks are independent of the syntax tree (they are comments).
     chunks.extend(_extract_ai_blocks(source, base_metadata))
+
+    # Cap chunk size: split any oversized semantic unit at line boundaries so a
+    # huge function can't stall the embedder. No-op when max_chunk_chars is None.
+    if max_chunk_chars:
+        capped: List[Chunk] = []
+        for c in chunks:
+            capped.extend(_split_oversized_chunk(c, max_chunk_chars))
+        chunks = capped
 
     # Stable ordering by position helps reproducibility and debugging.
     chunks.sort(key=lambda c: (c.start_line, c.end_line))

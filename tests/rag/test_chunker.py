@@ -151,3 +151,58 @@ def test_blank_line_breaks_doc_comment_association():
     chunks = chunk_c_source(source)
     fn = next(c for c in chunks if c.symbol == "unrelated")
     assert "unrelated banner" not in fn.text
+
+
+def _big_function(name: str, n_lines: int) -> str:
+    body = "\n".join(f"    int v{i} = {i};" for i in range(n_lines))
+    return f"void {name}(void) {{\n{body}\n}}\n"
+
+
+def test_no_split_when_cap_not_given():
+    # Default behaviour unchanged: a big function stays a single chunk.
+    src = _big_function("huge", 300)
+    chunks = chunk_c_source(src)  # no max_chunk_chars
+    funcs = [c for c in chunks if c.kind == "function"]
+    assert len(funcs) == 1
+    assert funcs[0].symbol == "huge"
+
+
+def test_oversized_chunk_is_split_within_cap():
+    cap = 600
+    src = _big_function("huge", 300)  # ~6000 chars, well above the cap
+    chunks = chunk_c_source(src, max_chunk_chars=cap)
+
+    parts = [c for c in chunks if c.kind == "function"]
+    assert len(parts) > 1, "the oversized function must be split into sub-chunks"
+
+    # Every sub-chunk respects the cap (lines here are short, so no overflow).
+    for p in parts:
+        assert len(p.text) <= cap
+
+    # Continuation markers: symbol#partN, metadata part_index/part_total/chunk_split.
+    total = parts[0].metadata["part_total"]
+    assert total == len(parts)
+    for idx, p in enumerate(parts, start=1):
+        assert p.symbol == f"huge#part{idx}"
+        assert p.metadata["part_index"] == idx
+        assert p.metadata["part_total"] == total
+        assert p.metadata["chunk_split"] is True
+
+    # Line ranges are sequential and non-overlapping; no text is lost.
+    parts_sorted = sorted(parts, key=lambda c: c.start_line)
+    for a, b in zip(parts_sorted, parts_sorted[1:]):
+        assert b.start_line == a.end_line + 1
+    rejoined = "\n".join(p.text for p in parts_sorted)
+    assert rejoined == src.rstrip("\n")  # reconstructs the original chunk text
+
+
+def test_split_preserves_base_metadata():
+    cap = 500
+    src = _big_function("huge", 300)
+    chunks = chunk_c_source(src, base_metadata={"board": "ASY011", "micro": "STM32H750"}, max_chunk_chars=cap)
+    parts = [c for c in chunks if c.kind == "function"]
+    assert len(parts) > 1
+    for p in parts:
+        assert p.metadata["board"] == "ASY011"
+        assert p.metadata["micro"] == "STM32H750"
+

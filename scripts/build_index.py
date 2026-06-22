@@ -117,6 +117,11 @@ def main(argv=None) -> int:
         f"[build_index] done: indexed {summary['files']} files / "
         f"{summary['chunks']} chunks. Total in store: {store.count()}."
     )
+    skipped = summary.get("skipped") or []
+    if skipped:
+        print(f"[build_index] WARNING: skipped {len(skipped)} file(s) due to errors:")
+        for item in skipped:
+            print(f"  - {item['file']}: {item['error']}")
     return 0
 
 
