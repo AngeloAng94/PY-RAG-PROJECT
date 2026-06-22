@@ -94,3 +94,9 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# Platform folder: keep on disk, exclude from the published repo
+.emergent/
+
+# Stray platform git identity — not used by git (lives in .git/config); exclude from repo
+.gitconfig

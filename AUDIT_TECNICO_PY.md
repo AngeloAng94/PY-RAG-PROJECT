@@ -5,7 +5,7 @@
 **Stato**: scaffolding completo e revisionato · 36 test verdi (offline) · iterazioni concluse (hold)
 
 > Ambito dell'audit: pacchetto `rag/` + `scripts/` + `tests/rag/` (lo scaffolding di retrieval consegnato).
-> Le cartelle `backend/` e `frontend/` sono lo **scaffold pre-esistente** dell'ambiente (template FastAPI/React non collegato a `rag/`) e sono trattate separatamente dove pertinente.
+> Lo scaffold web pre-esistente (`backend/`, `frontend/`, `.emergent/`, `memory/`, `test_reports/`, `test_result.md`) è stato **rimosso dal repo** per renderlo auto-contenuto: ora contiene solo il motore RAG, i test, gli script e i documenti. (`.emergent/` resta su disco per la piattaforma ma è escluso dal repo.)
 
 ---
 
@@ -60,7 +60,7 @@
 | Parsing C (chunking semantico) | tree-sitter | 0.25.2 |
 | Grammatica C | tree-sitter-c | 0.24.2 |
 | Embeddings (default locale) | HTTP OpenAI-compatible `/v1/embeddings` via `requests` | requests 2.34.2 |
-| Config / env | python-dotenv | >=1.0.1 (da `backend/requirements.txt`) |
+| Config / env | python-dotenv | 1.2.2 (dichiarato in `requirements-rag.txt`) |
 | Testing | pytest | 8.x (>=8.0.0) |
 | Embedding runtime | Esterno/locale (Ollama, llama.cpp, LM Studio, vLLM, TEI) | N/D (non incluso nel repo) |
 | CI/CD | Nessuno | N/D |
@@ -109,10 +109,14 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 │       └── test_inspect.py       # 4 test
 ├── AUDIT_TECNICO_PY.md           # questo documento
 ├── INTEGRATION.md                # checklist di cablaggio all'agente reale
+├── README.md                     # documentazione di progetto (root)
+├── conftest.py                   # helper di import per i test (root project on sys.path)
 ├── requirements-rag.txt          # dipendenze AUTO-CONTENUTE del componente (portabilità)
-├── .env.rag.template             # template chiavi RAG_*
-├── backend/  frontend/           # scaffold pre-esistente (NON collegato a rag/)
-└── memory/   test_reports/       # artefatti di piattaforma
+└── .env.rag.template             # template chiavi RAG_* (committato; copia in .env)
+
+# Nota: lo scaffold web (backend/, frontend/) e i file di piattaforma
+# (.emergent/, memory/, test_reports/, test_result.md) sono stati RIMOSSI dal
+# repo. Il repo pubblicato contiene SOLO il motore RAG e la sua doc.
 ```
 
 ### 2.2 Analisi file principali
@@ -141,7 +145,7 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 
 ## 3. DATABASE & MODELLO DATI
 
-Persistenza tramite **ChromaDB** (vector store su disco, `PersistentClient`). Nessun RDBMS o MongoDB usato dal pacchetto `rag/` (lo scaffold `backend/` include driver Mongo ma è separato e non collegato).
+Persistenza tramite **ChromaDB** (vector store su disco, `PersistentClient`). Nessun RDBMS o MongoDB usato né presente nel repo: lo scaffold web (incl. eventuali driver Mongo) è stato rimosso, il componente è ora puramente di retrieval.
 
 ### 3.1 Elenco collections / tabelle
 
@@ -228,6 +232,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 | 8 | `bb771dd` | `INTEGRATION.md` (checklist di cablaggio all'agente reale); chiusura iterazioni di scaffolding (hold) |
 | 9 | onboarding | Portabilità: `requirements-rag.txt` auto-contenuto; nota portabilità in README/audit |
 | 10 | onboarding | Fix packaging/onboarding (clone pulito): eccezione `!.env.rag.template` in `.gitignore` (il template era catturato da `.env.*` e non finiva nel repo), esclusione indice `.rag_index/`, `conftest.py` di root per import robusto, quick-start README riordinato (install → test offline → env → index) |
+| 11 | repo cleanup | `.env.rag.template` **force-added** all'index (la sola negazione gitignore non basta: git non auto-aggiunge un file prima ignorato); rimosso lo scaffold web non usato (`backend/`, `frontend/`, `memory/`, `test_reports/`, `test_result.md`, `.gitconfig`); `.emergent/` escluso dal repo ma mantenuto su disco. Repo ora auto-contenuto: solo motore RAG + test + script + docs + template |
 
 *Nota: la mappatura step→commit è ricostruita dalla cronologia ed è indicativa; gli step 9–10 sono fix di packaging/onboarding senza modifiche ai 3 file core.*
 
@@ -247,7 +252,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 | DT-08 | Modello dati comune/categoria | Soluzione sentinel `ABSENT` adottata perché Chroma non sa filtrare "chiave assente" (no `$exists`; `$ne`/`$nin` ammettono altri valori). Decisione corretta ma da validare sui dati reali per coerenza di ingest. | P2 |
 | DT-09 | Coverage | Nessuna misura di code coverage configurata. | P3 |
 | DT-10 | CI/CD | Assenza di pipeline automatica (lint/test su push). | P3 |
-| DT-11 | Dipendenze | Manifest dedicato e auto-contenuto `requirements-rag.txt` (versioni pinnate) **presente** → componente installabile/portabile altrove. Residuo minore: `backend/requirements.txt` resta condiviso con lo scaffold (vincoli misti `==`/`>=`); nessun lockfile/`pyproject.toml` formale. | P3 |
+| DT-11 | Dipendenze | Manifest dedicato e auto-contenuto `requirements-rag.txt` (versioni pinnate) **presente** → componente installabile/portabile altrove. Residuo minore: nessun lockfile/`pyproject.toml` formale. | P3 |
 | DT-12 | Warning deprecation | DeprecationWarning OpenTelemetry (dipendenza transitiva di Chroma) nei test; non bloccante. | P3 |
 
 ---
