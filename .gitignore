@@ -83,6 +83,14 @@ android-sdk/
 .env
 .env.*
 *.env
+# ...but DO commit the documented template so a fresh clone can configure itself:
+!.env.rag.template
+
+# RAG on-disk index (ChromaDB PersistentClient) — never commit a built index.
+.rag_index/
+.rag_index
+*.rag_index
+
 credentials.json
 *.key
 .credentials

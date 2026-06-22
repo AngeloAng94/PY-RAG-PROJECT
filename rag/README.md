@@ -85,17 +85,30 @@ Two rules make this correct:
 
 ## 4. Quick start
 
+Run these from the **project root** on a fresh clone:
+
 ```bash
-pip install -r requirements-rag.txt   # self-contained deps (chromadb, tree-sitter, requests, …)
-cp .env.rag.template .env              # set RAG_* and point RAG_EMBED_BASE_URL at your local embed runtime
+# 1. Install the self-contained dependencies (includes pytest for the tests)
+pip install -r requirements-rag.txt
+
+# 2. Verify the install — runs fully offline (deterministic FakeEmbedder, no runtime/network)
+python -m pytest tests/rag -q          # expect: 36 passed
+
+# 3. Create your local config from the committed template
+cp .env.rag.template .env              # then edit RAG_EMBED_BASE_URL to point at your local embed runtime
+                                       # default targets an OpenAI-compatible /v1, e.g. Ollama at http://localhost:11434/v1
+
+# 4. Build an index from a real repo (needs your embed runtime running)
 python scripts/build_index.py --repo /path/to/firmware \
     --board ASY011 --micro STM32H750 --scope categoria --categoria caffe --reset
-pytest tests/rag -q                    # 36 tests, fully offline (deterministic FakeEmbedder, no runtime/network)
 ```
 
-`.env` keys (see `.env.rag.template`): `RAG_INDEX_PATH`, `RAG_EMBED_PROVIDER`,
-`RAG_EMBED_MODEL`, `RAG_EMBED_BASE_URL`, `RAG_EMBED_API_KEY`, `RAG_TOP_K`,
-`RAG_MAX_EXAMPLE_CHARS`.
+> Steps 1–2 need no embedding runtime and no `.env`. Only steps 3–4 (real
+> indexing/retrieval) require a running local embedder.
+
+`.env` keys (all documented in `.env.rag.template`): `RAG_INDEX_PATH`,
+`RAG_EMBED_PROVIDER`, `RAG_EMBED_MODEL`, `RAG_EMBED_BASE_URL`,
+`RAG_EMBED_API_KEY`, `RAG_TOP_K`, `RAG_MAX_EXAMPLE_CHARS`.
 
 ### Portability
 
