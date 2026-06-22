@@ -226,8 +226,10 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 | 6 | `914e678`/`ece23d3` | `build_index.py` normalizza a `ABSENT` le dimensioni categoria/cliente omesse e stampa una nota; sezione "Populating the index" nel README con la regola del codice condiviso |
 | 7 | `e514a53` | Repair loop: `retriever_node` arricchisce la query con una forma concisa dell'errore di compile (`_compile_error_hint`, cap 300 char); debug `repair_pass`/`error_hint`; note di wiring documentate; +2 test (36 PASS) |
 | 8 | `bb771dd` | `INTEGRATION.md` (checklist di cablaggio all'agente reale); chiusura iterazioni di scaffolding (hold) |
+| 9 | onboarding | Portabilità: `requirements-rag.txt` auto-contenuto; nota portabilità in README/audit |
+| 10 | onboarding | Fix packaging/onboarding (clone pulito): eccezione `!.env.rag.template` in `.gitignore` (il template era catturato da `.env.*` e non finiva nel repo), esclusione indice `.rag_index/`, `conftest.py` di root per import robusto, quick-start README riordinato (install → test offline → env → index) |
 
-*Nota: la mappatura step→commit è ricostruita dalla cronologia (`Initial commit` + 9 auto-commit) ed è indicativa.*
+*Nota: la mappatura step→commit è ricostruita dalla cronologia ed è indicativa; gli step 9–10 sono fix di packaging/onboarding senza modifiche ai 3 file core.*
 
 ---
 
@@ -291,11 +293,13 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 - Accoppiamento al comportamento di filtro di ChromaDB (assenza di `$exists`): la scelta del sentinel `ABSENT` è corretta ma va mantenuta coerente lato ingest, altrimenti i chunk condivisi verrebbero esclusi.
 - Mancanza di CI e coverage: regressioni possibili non intercettate automaticamente.
 - Versionamento formale assente (solo hash git); tracciabilità delle release affidata agli auto-commit di piattaforma.
+- **Default di configurazione duplicati**: i valori di default vivono in DUE punti — `rag/config.py` (fallback del codice) e `.env.rag.template` (copia editata dal team). Attualmente COERENTI (in particolare `RAG_MAX_EXAMPLE_CHARS=8000`, `RAG_TOP_K=5`, provider `local`, `nomic-embed-text`, base URL `:11434/v1`). Da mantenere allineati a ogni modifica (nessun rischio attuale, solo manutenzione).
 
 **Raccomandazioni (prioritarie)**
 1. Popolare `EVAL_SET` e stabilire una baseline recall@k prima di calibrare chunking/metadati.
 2. Cablare le dimensioni di sessione dal classificatore reale e indicizzare un repo pilota per validare `infer_layer` e il modello a strati.
 3. Introdurre CI minima (lint + pytest) e `pytest-cov`, e valutare retry/backoff verso il runtime embedding.
+4. Validazione finale di onboarding: clone reale da GitHub su macchina del team (Windows) → README fino a `36 passed` (la simulazione locale di clone pulito è un buon proxy ma gira in ambiente già configurato).
 
 Nel complesso: scaffolding maturo, revisionato e in stato di **hold** (iterazioni concluse), pronto per la revisione umana e l'estensione; il debito residuo è prevalentemente di **calibrazione di dominio** (P1/P2 attesi) più alcune voci di **igiene di progetto** (P3), senza criticità bloccanti nel codice consegnato. Il prossimo passo utile (`INTEGRATION.md`) richiede un indice reale e un `EVAL_SET` reale su cui misurare.
 

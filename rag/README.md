@@ -110,6 +110,12 @@ python scripts/build_index.py --repo /path/to/firmware \
 `RAG_EMBED_PROVIDER`, `RAG_EMBED_MODEL`, `RAG_EMBED_BASE_URL`,
 `RAG_EMBED_API_KEY`, `RAG_TOP_K`, `RAG_MAX_EXAMPLE_CHARS`.
 
+> **Default values live in two places that must stay in sync:**
+> `rag/config.py` (the code fallback, used when a key is unset) and
+> `.env.rag.template` (the copy the team edits). They are currently consistent —
+> notably `RAG_MAX_EXAMPLE_CHARS = 8000` (chars) and `RAG_TOP_K = 5`. If you
+> change a default, update **both** files.
+
 ### Portability
 
 The component is **self-contained and machine-independent** — copy `rag/`,
