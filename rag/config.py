@@ -17,6 +17,8 @@ Recognised ``.env`` keys (see ``.env.rag.template``):
     RAG_MAX_EXAMPLE_CHARS   Hard budget for retrieved example text in context.
     RAG_EMBED_TIMEOUT       Per-request embedding HTTP timeout, seconds.
     RAG_MAX_CHUNK_CHARS     Upper bound on a single chunk's length (split above).
+    RAG_MAX_DATA_LINE_CHARS Longest-line threshold above which a file is treated
+                            as generated asset/data (skipped before embedding).
 """
 
 from __future__ import annotations
@@ -52,6 +54,10 @@ _DEFAULTS = {
     # into sequential sub-chunks (at line boundaries) so it can't stall the
     # embedder or exceed model input limits.
     "RAG_MAX_CHUNK_CHARS": "12000",
+    # Longest-line threshold: a file whose longest line exceeds this is treated
+    # as generated asset/data (e.g. an image-as-C pixel blob) and skipped before
+    # embedding. Well above normal C lines, below image blobs (~6800 chars).
+    "RAG_MAX_DATA_LINE_CHARS": "2000",
 }
 
 
@@ -72,6 +78,7 @@ class RagConfig:
     max_example_chars: int
     embed_timeout: int
     max_chunk_chars: int
+    max_data_line_chars: int
 
 
 def load_config() -> RagConfig:
@@ -87,4 +94,5 @@ def load_config() -> RagConfig:
         max_example_chars=int(_get("RAG_MAX_EXAMPLE_CHARS")),
         embed_timeout=int(_get("RAG_EMBED_TIMEOUT")),
         max_chunk_chars=int(_get("RAG_MAX_CHUNK_CHARS")),
+        max_data_line_chars=int(_get("RAG_MAX_DATA_LINE_CHARS")),
     )

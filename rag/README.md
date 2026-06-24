@@ -108,13 +108,15 @@ python scripts/build_index.py --repo /path/to/firmware \
 
 `.env` keys (all documented in `.env.rag.template`): `RAG_INDEX_PATH`,
 `RAG_EMBED_PROVIDER`, `RAG_EMBED_MODEL`, `RAG_EMBED_BASE_URL`,
-`RAG_EMBED_API_KEY`, `RAG_TOP_K`, `RAG_MAX_EXAMPLE_CHARS`.
+`RAG_EMBED_API_KEY`, `RAG_EMBED_TIMEOUT`, `RAG_TOP_K`, `RAG_MAX_EXAMPLE_CHARS`,
+`RAG_MAX_CHUNK_CHARS`, `RAG_MAX_DATA_LINE_CHARS`.
 
 > **Default values live in two places that must stay in sync:**
 > `rag/config.py` (the code fallback, used when a key is unset) and
 > `.env.rag.template` (the copy the team edits). They are currently consistent —
-> notably `RAG_MAX_EXAMPLE_CHARS = 8000` (chars) and `RAG_TOP_K = 5`. If you
-> change a default, update **both** files.
+> notably `RAG_MAX_EXAMPLE_CHARS = 8000`, `RAG_TOP_K = 5`,
+> `RAG_EMBED_TIMEOUT = 300` (s), `RAG_MAX_CHUNK_CHARS = 12000`,
+> `RAG_MAX_DATA_LINE_CHARS = 2000`. If you change a default, update **both** files.
 
 ### Portability
 
@@ -180,6 +182,42 @@ python rag/inspect.py --group-by categoria    # expect a __none__ bucket for sha
 > **Same embedder for index and query.** Whatever `RAG_EMBED_PROVIDER` /
 > `RAG_EMBED_MODEL` you index with MUST be used at query time. Changing the
 > model means re-indexing from scratch.
+
+### Image-as-C / generated data files are auto-skipped
+
+Firmware repos mix code and data in the **same folder** (e.g. `menu_template/`
+holds `auto_boost_on.c` [code] and `img6.c` [a 2.9 MB pixel blob]), so
+folder-name exclusion is not enough — detection is **content-based**. Before
+embedding, the indexer skips a file when:
+
+1. its **longest line exceeds `RAG_MAX_DATA_LINE_CHARS`** (default `2000`) — image
+   blobs have 6000+ char lines; normal C lines are far shorter; **or**
+2. it is **dominated by a single large byte-array initializer** (a big
+   `uint8_t x[] = { ... }` that is most of the file and overwhelmingly numeric).
+
+These data-skips are reported as **`skipped_data`**, counted **separately** from
+error-skips (**`skipped_error`**) and manual exclusions (**`skipped_excluded`**).
+
+**Avoiding false positives on real code** (e.g. a `const uint16_t sin_table[]`
+lookup table): the heuristics are conservative (the 2000-char default sits well
+above normal source but below image blobs), and you can always override:
+
+```bash
+# Skip whole trees explicitly (repeatable; dir name or glob):
+python scripts/build_index.py --repo /path/to/fw --board ASY011 --micro STM32H750 \
+    --exclude lvgl/ --exclude Drivers/ --exclude images/ --exclude 'img*.c'
+
+# Force-index a specific file the heuristic wrongly flagged:
+python scripts/build_index.py --repo /path/to/fw --board ASY011 --micro STM32H750 \
+    --include sin_table.c
+
+# Disable the auto-skip entirely (index everything — use with care):
+python scripts/build_index.py --repo /path/to/fw --board ASY011 --micro STM32H750 \
+    --include-data
+```
+
+Precedence: `--exclude` wins first; then `--include` / `--include-data` force a
+file past the data heuristic; otherwise the content heuristic decides.
 
 ---
 

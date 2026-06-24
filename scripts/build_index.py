@@ -65,6 +65,28 @@ def parse_args(argv=None) -> argparse.Namespace:
         action="store_true",
         help="Wipe the collection before indexing (full rebuild).",
     )
+
+    # Data/asset filtering.
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        metavar="GLOB",
+        help="Skip files matching this glob/dir (repeatable), e.g. --exclude lvgl/ "
+        "--exclude Drivers/ --exclude images/ --exclude 'img*.c'.",
+    )
+    parser.add_argument(
+        "--include",
+        action="append",
+        metavar="GLOB",
+        help="Force-index files matching this glob even if the data heuristic "
+        "flags them (repeatable), e.g. --include 'sin_table.c'.",
+    )
+    parser.add_argument(
+        "--include-data",
+        action="store_true",
+        help="Disable the content-based asset/data auto-skip entirely (index "
+        "everything, including image-as-C blobs). Use with care.",
+    )
     return parser.parse_args(argv)
 
 
@@ -111,16 +133,31 @@ def main(argv=None) -> int:
         embedder=embedder,
         base_metadata=base_metadata,
         reset=args.reset,
+        exclude=args.exclude,
+        include=args.include,
+        include_data=args.include_data,
     )
 
     print(
         f"[build_index] done: indexed {summary['files']} files / "
         f"{summary['chunks']} chunks. Total in store: {store.count()}."
     )
-    skipped = summary.get("skipped") or []
-    if skipped:
-        print(f"[build_index] WARNING: skipped {len(skipped)} file(s) due to errors:")
-        for item in skipped:
+
+    skipped_data = summary.get("skipped_data") or []
+    skipped_error = summary.get("skipped_error") or []
+    skipped_excluded = summary.get("skipped_excluded") or []
+
+    if skipped_data:
+        print(f"[build_index] skipped {len(skipped_data)} data/asset file(s) (no retrieval value):")
+        for item in skipped_data:
+            print(f"  - {item['file']}: {item['reason']}")
+    if skipped_excluded:
+        print(f"[build_index] skipped {len(skipped_excluded)} file(s) via --exclude:")
+        for item in skipped_excluded:
+            print(f"  - {item['file']}: pattern {item['pattern']!r}")
+    if skipped_error:
+        print(f"[build_index] WARNING: skipped {len(skipped_error)} file(s) due to errors:")
+        for item in skipped_error:
             print(f"  - {item['file']}: {item['error']}")
     return 0
 
