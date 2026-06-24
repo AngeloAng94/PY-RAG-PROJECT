@@ -1,8 +1,8 @@
 # AUDIT TECNICO — RAG Infrastructure (embedded-code-generation agent)
-**Data**: 2026-06-16
-**Versione codebase**: git `main` @ `bb771dd` (10 commit totali; nessun tag SemVer presente → versione formale N/D)
+**Data**: 2026-06-24
+**Versione codebase**: git `main` @ `87e3f29` (nessun tag SemVer presente → versione formale N/D)
 **Autore**: Angelo Anglani
-**Stato**: scaffolding completo e revisionato · 36 test verdi (offline) · iterazioni concluse (hold)
+**Stato**: scaffolding completo e revisionato · 51 test verdi (offline) · indurito per repo reali (timeout, split, resilienza, auto-skip asset)
 
 > Ambito dell'audit: pacchetto `rag/` + `scripts/` + `tests/rag/` (lo scaffolding di retrieval consegnato).
 > Lo scaffold web pre-esistente (`backend/`, `frontend/`, `.emergent/`, `memory/`, `test_reports/`, `test_result.md`) è stato **rimosso dal repo** per renderlo auto-contenuto: ora contiene solo il motore RAG, i test, gli script e i documenti. (`.emergent/` resta su disco per la piattaforma ma è escluso dal repo.)
@@ -69,7 +69,7 @@
 
 Libreria/pacchetto modulare Python (non un servizio web). Architettura a due percorsi
 nettamente separati:
-- **Offline (ingest)**: walk repo → chunking semantico → derivazione metadati → embedding → persistenza ChromaDB.
+- **Offline (ingest)**: walk repo → **filtro asset/exclude** → chunking semantico (con **split** dei chunk oversize) → derivazione metadati → embedding (**timeout configurabile**) → persistenza ChromaDB. **Resiliente**: un file problematico non aborta il build.
 - **Online (retrieval)**: nodo drop-in che filtra per metadati **prima** della similarità e assembla il contesto entro un budget.
 
 Principio guida "local-first": di default nessun dato lascia la macchina (embedder locale, telemetria Chroma disabilitata). Lo **stesso** embedder è usato per indicizzazione e query. Vincolo di dominio forte: `board`/`micro` obbligatori — mai attraversare il confine di board.
@@ -102,7 +102,9 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 ├── tests/
 │   └── rag/
 │       ├── conftest.py           # FakeEmbedder deterministico + sorgente C di esempio
-│       ├── test_chunker.py       # 10 test
+│       ├── test_chunker.py       # 13 test (incl. split chunk oversize)
+│       ├── test_config.py        # 3 test (default timeout/data; wiring embedder)
+│       ├── test_indexer.py       # 9 test (resilienza, auto-skip asset, exclude/include)
 │       ├── test_store.py         # 4 test
 │       ├── test_query_eval.py    # 13 test
 │       ├── test_retriever_node.py# 5 test (incl. repair loop)
@@ -124,20 +126,20 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 | File | Righe | Responsabilità |
 |---|---:|---|
 | `rag/__init__.py` | 37 | Documentazione d'insieme; esporta `RagConfig`, `load_config`. |
-| `rag/config.py` | 77 | `RagConfig` (dataclass frozen) + `load_config()`; unico punto di lettura env, default conservativi. |
+| `rag/config.py` | 98 | `RagConfig` (dataclass frozen) + `load_config()`; unico punto di lettura env, default conservativi (incl. `RAG_EMBED_TIMEOUT`, `RAG_MAX_CHUNK_CHARS`, `RAG_MAX_DATA_LINE_CHARS`). |
 | `rag/constants.py` | 34 | Sentinel `ABSENT="__none__"`; `FALLBACK_DIMS=("categoria","cliente")`; razionale modello. |
-| `rag/embeddings.py` | 198 | `Embedder` (ABC), `OpenAICompatibleEmbedder` (default locale), `CloudEmbedderStub`, factory `get_embedder`; `.signature` per rilevare mismatch. |
-| `rag/chunker.py` | 392 | Chunking semantico via tree-sitter (function/struct/enum/typedef/define), `file_context` raggruppato, `ai_block` con scan riga-per-riga, doc-comment in testa. |
+| `rag/embeddings.py` | 202 | `Embedder` (ABC), `OpenAICompatibleEmbedder` (default locale, **timeout da config**), `CloudEmbedderStub`, factory `get_embedder`; `.signature` per rilevare mismatch. |
+| `rag/chunker.py` | 468 | Chunking semantico via tree-sitter, `file_context` raggruppato, `ai_block` con scan riga-per-riga, doc-comment in testa, **split dei chunk oversize** (`_split_oversized_chunk`, cap `RAG_MAX_CHUNK_CHARS`). |
 | `rag/store.py` | 168 | `ChromaStore`: `add/query/reset/count/list_chunks`; filtri `$and`/`$or`/`$in`; sanitizzazione metadati. |
-| `rag/indexer.py` | 179 | Ingest offline: `index_file`, `index_repo`, `infer_layer`, derivazione metadati + fallback `ABSENT`. |
+| `rag/indexer.py` | 376 | Ingest offline: `index_file`, `index_repo`, `infer_layer`, fallback `ABSENT`; **auto-skip asset content-based** (`looks_like_data`), glob `--exclude`/`--include`, **resilienza per-file**; summary `skipped_data`/`skipped_error`/`skipped_excluded`. |
 | `rag/query.py` | 160 | `build_where` (filtro a strati) + `retrieve_relevant`; board/micro obbligatori; ordine filtro→similarità. |
 | `rag/retriever_node.py` | 314 | Nodo drop-in `retrieve`; file target intero + esempi a budget; **arricchimento query nel repair loop** (`_compile_error_hint`, cap 300 char); campi additivi `retrieved_chunks`/`retrieval_debug` (incl. `repair_pass`, `error_hint`); import tollerante di `AgentState`; note di wiring documentate. |
 | `rag/eval.py` | 113 | `EvalCase`, `recall_at_k`, `RecallReport`; `EVAL_SET` con 2 placeholder. |
 | `rag/inspect.py` | 163 | CLI read-only: dump id+metadati, filtri, `--group-by`, `--json`, `--show-text`. |
-| `scripts/build_index.py` | 124 | CLI ingest: board/micro (obbligatori) + scope/categoria/cliente/costruttore + `--reset`; **normalizza a `ABSENT` le dimensioni categoria/cliente omesse** e stampa una nota esplicita. |
-| **Totale codice `rag/` + `scripts/`** | **1959** | — |
-| **Totale `tests/rag/`** | **849** | 36 funzioni di test |
-| **Totale complessivo** | **2808** | (incl. file `__init__`) |
+| `scripts/build_index.py` | 166 | CLI ingest: board/micro + scope/categoria/cliente/costruttore + `--reset`; normalizza a `ABSENT` le dim. omesse; **`--exclude`/`--include`/`--include-data`** e riepilogo dei file saltati (data/excluded/error). |
+| **Totale codice `rag/` + `scripts/`** | **2299** | — |
+| **Totale `tests/rag/`** | **1167** | 51 funzioni di test |
+| **Totale complessivo** | **3466** | (incl. file `__init__`) |
 
 > Documenti di supporto nella root: `INTEGRATION.md` (checklist di cablaggio all'agente reale), `README.md` del pacchetto (`rag/README.md`), `.env.rag.template`.
 
@@ -189,9 +191,12 @@ Nel codice non sono presenti `enum.Enum` Python; i tipi categoriali sono **costa
 | Gestione robusta degli errori nel nodo (no crash del grafo) | Implementato (try/except → `retrieval_debug.status="error"`) |
 | Autenticazione applicativa (JWT/OAuth) nel pacchetto `rag/` | N/D (fuori ambito; non pertinente a una libreria di retrieval) |
 | Validazione percorso file target / path traversal | Parziale (lettura diretta del file target; nessuna sandbox — accettabile per tool interno offline) |
-| Timeout chiamate di rete embedding | Implementato (default 60s in `OpenAICompatibleEmbedder`) |
+| Timeout chiamate di rete embedding | Implementato e **configurabile** (`RAG_EMBED_TIMEOUT`, default 300s; era 60s hard-coded) |
+| Resilienza build (un file non aborta il build) | Implementato (`index_repo` try/except per-file → `skipped_error`) |
+| Auto-skip file asset/dati (immagini-in-C) | Implementato content-based (`looks_like_data`: riga lunga / byte-array dominante) prima dell'embedding |
+| Cap dimensione chunk (no embedding bloccato) | Implementato (`RAG_MAX_CHUNK_CHARS`, split ai confini di riga) |
 | Rate limiting / retry verso runtime embedding | Mancante (nessun backoff/retry) |
-| Pinning/lock delle dipendenze | Parziale (`requirements.txt` con vincoli misti `==`/`>=`; nessun lockfile dedicato per `rag/`) |
+| Pinning/lock delle dipendenze | Parziale (`requirements-rag.txt` con versioni pinnate; nessun lockfile/`pyproject.toml`) |
 
 ---
 
@@ -199,16 +204,18 @@ Nel codice non sono presenti `enum.Enum` Python; i tipi categoriali sono **costa
 
 ### 5.1 Test automatici
 
-Suite eseguita offline con `FakeEmbedder` deterministico (nessun runtime/rete). Esito: **36 passed** (1 warning di deprecation proveniente da OpenTelemetry/Chroma, non dal codice del progetto).
+Suite eseguita offline con `FakeEmbedder` deterministico (nessun runtime/rete). Esito: **51 passed** (1 warning di deprecation proveniente da OpenTelemetry/Chroma, non dal codice del progetto).
 
 | Area | Test | Stato |
 |---|---:|---|
-| Chunking (`test_chunker.py`) | 10 | PASS — kinds semantici, simboli funzione, `ai_block` (tag/ripetuti/END mancante), `file_context` (include+globali), doc-comment, range righe |
+| Chunking (`test_chunker.py`) | 13 | PASS — kinds semantici, simboli, `ai_block` (tag/ripetuti/END mancante), `file_context`, doc-comment, range righe, **split chunk oversize entro cap + metadati preservati** |
+| Config (`test_config.py`) | 3 | PASS — default `embed_timeout=300`/`max_chunk_chars=12000`/`max_data_line_chars` da config; timeout cablato nell'embedder |
+| Indexer (`test_indexer.py`) | 9 | PASS — split persistito con id distinti; **resilienza** (file fallito saltato, build continua); **auto-skip asset** (riga lunga / byte-array); modulo normale indicizzato; `--include`/`--include-data`/`--exclude`; summary `skipped_data`/`skipped_error` separati |
 | Store (`test_store.py`) | 4 | PASS — add/count, filtro board, filtro composto `$or`, reset |
 | Query + Eval (`test_query_eval.py`) | 13 | PASS — board/micro obbligatori, `$in` su scope/layer/costruttore, composizione strati, fall-through comune (`X OR ABSENT`) anche end-to-end via indexer, recall@k |
 | Retriever node (`test_retriever_node.py`) | 5 | PASS — popolamento `full_context`+debug, cap budget, skip senza board/micro, **arricchimento query nel repair loop**, nessun arricchimento su compile riuscito |
 | Inspect CLI (`test_inspect.py`) | 4 | PASS — `list_chunks` metadati/filtro/testo, `--json`, `--group-by` |
-| **Totale** | **36** | **PASS** |
+| **Totale** | **51** | **PASS** |
 
 Copertura di codice (coverage %) misurata: N/D (non configurata `pytest-cov`).
 

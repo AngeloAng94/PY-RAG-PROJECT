@@ -102,6 +102,16 @@ python rag/inspect.py --group-by board        # check no cross-board leakage
 python rag/inspect.py --group-by categoria    # expect a __none__ bucket for shared code
 ```
 
+**Mixed code + data folders.** Real repos keep code and image-as-C blobs in the
+same folder. The build **auto-skips generated asset/data files** (content-based:
+long lines or a dominant byte array) before embedding, so they can't time out
+the embedder. Use `--exclude lvgl/ --exclude Drivers/ --exclude images/` for
+explicit trees, `--include <glob>` / `--include-data` to force-index a file the
+heuristic wrongly flags. The CLI prints `skipped_data` / `skipped_excluded` /
+`skipped_error` separately; a single bad file never aborts the build. Tune the
+threshold with `RAG_MAX_DATA_LINE_CHARS` and the embed timeout with
+`RAG_EMBED_TIMEOUT` (see `rag/README.md`).
+
 **Same embedder for index and query**: whatever `RAG_EMBED_PROVIDER` /
 `RAG_EMBED_MODEL` you index with MUST be used at query time. Changing the
 embedding model means re-indexing from scratch.

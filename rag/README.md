@@ -10,7 +10,7 @@ classify → retrieve → plan → generate → patch → compile → repair →
                    retrieve(state: AgentState) -> AgentState
 ```
 
-**Status:** scaffolding complete & reviewed · **36 tests passing** (offline) ·
+**Status:** scaffolding complete & reviewed · **51 tests passing** (offline) ·
 local-first (no data leaves the machine by default).
 For wiring this to the real agent, see [`/INTEGRATION.md`](../INTEGRATION.md).
 
@@ -43,10 +43,10 @@ silently destroys recall.
 |---|---|
 | `rag/config.py` | Single typed reader for all `RAG_*` env vars (`load_config`). |
 | `rag/constants.py` | The `ABSENT="__none__"` sentinel + `FALLBACK_DIMS` (the layered "shared code" rule). |
-| `rag/embeddings.py` | Abstract `Embedder` + swappable providers. Default = **local** OpenAI-compatible `/v1/embeddings`; cloud is an explicit stub. Same embedder for index & query. |
-| `rag/chunker.py` | Semantic C chunking via tree-sitter (function/struct/enum/typedef/define), **`// [AI_START_*]…[AI_END_*]` blocks** as `ai_block`, **`file_context`** (includes/globals/prototypes), and leading doc-comments. Never fixed-length. |
+| `rag/embeddings.py` | Abstract `Embedder` + swappable providers. Default = **local** OpenAI-compatible `/v1/embeddings`; cloud is an explicit stub. Same embedder for index & query. Per-request **timeout configurable** via `RAG_EMBED_TIMEOUT` (default 300s). |
+| `rag/chunker.py` | Semantic C chunking via tree-sitter (function/struct/enum/typedef/define), **`// [AI_START_*]…[AI_END_*]` blocks** as `ai_block`, **`file_context`** (includes/globals/prototypes), and leading doc-comments. Never fixed-length. **Oversized chunks split** at line boundaries above `RAG_MAX_CHUNK_CHARS`. |
 | `rag/store.py` | ChromaDB `PersistentClient` wrapper: `add / query / reset / count / list_chunks`; composed `$and`/`$or`/`$in` filters. |
-| `rag/indexer.py` | **Offline** ingest: walk repo → chunk → derive metadata → embed → store. Defaults unset `categoria`/`cliente` to `ABSENT`. Not a graph node. |
+| `rag/indexer.py` | **Offline** ingest: walk repo → chunk → derive metadata → embed → store. Defaults unset `categoria`/`cliente` to `ABSENT`. **Content-based auto-skip of image-as-C/data files**, `--exclude`/`--include` globs, and **per-file resilience** (one bad file never aborts the build). Not a graph node. |
 | `rag/query.py` | **Online** retrieval. Builds the layered metadata filter (board/micro **mandatory**), then ranks by similarity. |
 | `rag/retriever_node.py` | Drop-in `retrieve` node. Target file in full + budgeted examples → `full_context`; **enriches the query with the compile error on the repair loop**; adds `retrieved_chunks`/`retrieval_debug`. |
 | `rag/eval.py` | `recall_at_k` harness over a placeholder `EVAL_SET`. |
