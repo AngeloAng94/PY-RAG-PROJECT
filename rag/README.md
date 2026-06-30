@@ -92,7 +92,7 @@ Run these from the **project root** on a fresh clone:
 pip install -r requirements-rag.txt
 
 # 2. Verify the install — runs fully offline (deterministic FakeEmbedder, no runtime/network)
-python -m pytest tests/rag -q          # expect: 36 passed
+python -m pytest tests/rag -q          # expect: 52 passed
 
 # 3. Create your local config from the committed template
 cp .env.rag.template .env              # then edit RAG_EMBED_BASE_URL to point at your local embed runtime
