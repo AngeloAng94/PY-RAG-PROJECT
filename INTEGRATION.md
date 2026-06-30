@@ -12,17 +12,20 @@ The graph itself is unchanged:
 
 ## 1. Reconcile the node name: `retrieve` vs `retrieve_context`
 
-`rag/retriever_node.py` exposes the node as **`retrieve(state) -> state`**, but
-the existing graph registers the node under the key **`retrieve_context`**.
-Behaviour is identical; only the registered name differs. Pick ONE:
+`rag/retriever_node.py` exposes the node under **both** names —
+**`retrieve(state) -> state`** and **`retrieve_context(state) -> state`** — as an
+identity alias (`retrieve_context = retrieve`, both in `__all__`). They are the
+exact same function object: same signature, same logic, same contract. This
+means the module binds to the graph **regardless** of which key the graph uses,
+with no rename and no duplicated code:
 
-- **Option A — register under the graph's key (no rename):**
+- **Option A — register under the graph's key (recommended, no rename):**
   ```python
-  from rag.retriever_node import retrieve
-  builder.add_node("retrieve_context", retrieve)   # keep existing edges/keys
+  from rag.retriever_node import retrieve_context   # or `retrieve` — identical
+  builder.add_node("retrieve_context", retrieve_context)   # keep existing edges/keys
   ```
 - **Option B — rename the function** to match the graph, if you prefer the name
-  in `graph.py` to be authoritative.
+  in `graph.py` to be authoritative (not needed — both names already exist).
 
 Do **not** change the node signature or the graph edges — only the binding.
 

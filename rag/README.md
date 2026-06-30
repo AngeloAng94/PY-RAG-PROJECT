@@ -10,7 +10,7 @@ classify → retrieve → plan → generate → patch → compile → repair →
                    retrieve(state: AgentState) -> AgentState
 ```
 
-**Status:** scaffolding complete & reviewed · **51 tests passing** (offline) ·
+**Status:** scaffolding complete & reviewed · **52 tests passing** (offline) ·
 local-first (no data leaves the machine by default).
 For wiring this to the real agent, see [`/INTEGRATION.md`](../INTEGRATION.md).
 
@@ -246,8 +246,9 @@ successful compile leaves the query unchanged. `retrieval_debug` exposes
 - Any agent-level "action perimeter" logic.
 
 Two wiring decisions are documented (not coded) in
-[`/INTEGRATION.md`](../INTEGRATION.md): reconciling the `retrieve` vs
-`retrieve_context` node name, and whether to include `target_headers` (`.h`
+[`/INTEGRATION.md`](../INTEGRATION.md): the `retrieve` vs `retrieve_context`
+node name (the module already exposes **both** names as an identity alias, so
+either binding works), and whether to include `target_headers` (`.h`
 files) verbatim in `full_context`.
 
 Search the code for **`# TODO (human):`** for every spot that needs domain

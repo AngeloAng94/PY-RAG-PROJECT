@@ -1,8 +1,8 @@
 # AUDIT TECNICO — RAG Infrastructure (embedded-code-generation agent)
-**Data**: 2026-06-24
-**Versione codebase**: git `main` @ `87e3f29` (nessun tag SemVer presente → versione formale N/D)
+**Data**: 2026-06-30
+**Versione codebase**: git `main` @ `06db6a9` (nessun tag SemVer presente → versione formale N/D)
 **Autore**: Angelo Anglani
-**Stato**: scaffolding completo e revisionato · 51 test verdi (offline) · indurito per repo reali (timeout, split, resilienza, auto-skip asset)
+**Stato**: scaffolding completo e revisionato · 52 test verdi (offline) · indurito per repo reali (timeout, split, resilienza, auto-skip asset) · nodo esposto con doppio nome `retrieve`/`retrieve_context`
 
 > Ambito dell'audit: pacchetto `rag/` + `scripts/` + `tests/rag/` (lo scaffolding di retrieval consegnato).
 > Lo scaffold web pre-esistente (`backend/`, `frontend/`, `.emergent/`, `memory/`, `test_reports/`, `test_result.md`) è stato **rimosso dal repo** per renderlo auto-contenuto: ora contiene solo il motore RAG, i test, gli script e i documenti. (`.emergent/` resta su disco per la piattaforma ma è escluso dal repo.)
@@ -74,7 +74,7 @@ nettamente separati:
 
 Principio guida "local-first": di default nessun dato lascia la macchina (embedder locale, telemetria Chroma disabilitata). Lo **stesso** embedder è usato per indicizzazione e query. Vincolo di dominio forte: `board`/`micro` obbligatori — mai attraversare il confine di board.
 
-**Portabilità**: componente auto-contenuto e indipendente dalla macchina. Pure Python 3.9+, dipende solo da `chromadb`, `tree-sitter`, `tree-sitter-c`, `requests` (+ `python-dotenv` opzionale), dichiarate in `requirements-rag.txt`. Nessun percorso assoluto né accoppiamento a FastAPI/Mongo/ambiente; gli script ricavano la root dalla propria posizione e l'index path è relativo. Verificato eseguendo la suite (36 PASS) da una copia in una directory diversa da quella di sviluppo.
+**Portabilità**: componente auto-contenuto e indipendente dalla macchina. Pure Python 3.9+, dipende solo da `chromadb`, `tree-sitter`, `tree-sitter-c`, `requests` (+ `python-dotenv` opzionale), dichiarate in `requirements-rag.txt`. Nessun percorso assoluto né accoppiamento a FastAPI/Mongo/ambiente; gli script ricavano la root dalla propria posizione e l'index path è relativo. Verificato eseguendo la suite (52 PASS) da una copia in una directory diversa da quella di sviluppo.
 
 ---
 
@@ -107,7 +107,7 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 │       ├── test_indexer.py       # 9 test (resilienza, auto-skip asset, exclude/include)
 │       ├── test_store.py         # 4 test
 │       ├── test_query_eval.py    # 13 test
-│       ├── test_retriever_node.py# 5 test (incl. repair loop)
+│       ├── test_retriever_node.py# 6 test (incl. repair loop + alias retrieve_context)
 │       └── test_inspect.py       # 4 test
 ├── AUDIT_TECNICO_PY.md           # questo documento
 ├── INTEGRATION.md                # checklist di cablaggio all'agente reale
@@ -133,13 +133,13 @@ Principio guida "local-first": di default nessun dato lascia la macchina (embedd
 | `rag/store.py` | 168 | `ChromaStore`: `add/query/reset/count/list_chunks`; filtri `$and`/`$or`/`$in`; sanitizzazione metadati. |
 | `rag/indexer.py` | 376 | Ingest offline: `index_file`, `index_repo`, `infer_layer`, fallback `ABSENT`; **auto-skip asset content-based** (`looks_like_data`), glob `--exclude`/`--include`, **resilienza per-file**; summary `skipped_data`/`skipped_error`/`skipped_excluded`. |
 | `rag/query.py` | 160 | `build_where` (filtro a strati) + `retrieve_relevant`; board/micro obbligatori; ordine filtro→similarità. |
-| `rag/retriever_node.py` | 314 | Nodo drop-in `retrieve`; file target intero + esempi a budget; **arricchimento query nel repair loop** (`_compile_error_hint`, cap 300 char); campi additivi `retrieved_chunks`/`retrieval_debug` (incl. `repair_pass`, `error_hint`); import tollerante di `AgentState`; note di wiring documentate. |
+| `rag/retriever_node.py` | 322 | Nodo drop-in `retrieve` (+ alias di identità `retrieve_context = retrieve`, entrambi in `__all__`); file target intero + esempi a budget; **arricchimento query nel repair loop** (`_compile_error_hint`, cap 300 char); campi additivi `retrieved_chunks`/`retrieval_debug` (incl. `repair_pass`, `error_hint`); import tollerante di `AgentState`; note di wiring documentate. |
 | `rag/eval.py` | 113 | `EvalCase`, `recall_at_k`, `RecallReport`; `EVAL_SET` con 2 placeholder. |
 | `rag/inspect.py` | 163 | CLI read-only: dump id+metadati, filtri, `--group-by`, `--json`, `--show-text`. |
 | `scripts/build_index.py` | 166 | CLI ingest: board/micro + scope/categoria/cliente/costruttore + `--reset`; normalizza a `ABSENT` le dim. omesse; **`--exclude`/`--include`/`--include-data`** e riepilogo dei file saltati (data/excluded/error). |
-| **Totale codice `rag/` + `scripts/`** | **2299** | — |
-| **Totale `tests/rag/`** | **1167** | 51 funzioni di test |
-| **Totale complessivo** | **3466** | (incl. file `__init__`) |
+| **Totale codice `rag/` + `scripts/`** | **2307** | — |
+| **Totale `tests/rag/`** | **1188** | 52 funzioni di test |
+| **Totale complessivo** | **3495** | (incl. file `__init__`) |
 
 > Documenti di supporto nella root: `INTEGRATION.md` (checklist di cablaggio all'agente reale), `README.md` del pacchetto (`rag/README.md`), `.env.rag.template`.
 
@@ -204,7 +204,7 @@ Nel codice non sono presenti `enum.Enum` Python; i tipi categoriali sono **costa
 
 ### 5.1 Test automatici
 
-Suite eseguita offline con `FakeEmbedder` deterministico (nessun runtime/rete). Esito: **51 passed** (1 warning di deprecation proveniente da OpenTelemetry/Chroma, non dal codice del progetto).
+Suite eseguita offline con `FakeEmbedder` deterministico (nessun runtime/rete). Esito: **52 passed** (1 warning di deprecation proveniente da OpenTelemetry/Chroma, non dal codice del progetto).
 
 | Area | Test | Stato |
 |---|---:|---|
@@ -213,9 +213,9 @@ Suite eseguita offline con `FakeEmbedder` deterministico (nessun runtime/rete). 
 | Indexer (`test_indexer.py`) | 9 | PASS — split persistito con id distinti; **resilienza** (file fallito saltato, build continua); **auto-skip asset** (riga lunga / byte-array); modulo normale indicizzato; `--include`/`--include-data`/`--exclude`; summary `skipped_data`/`skipped_error` separati |
 | Store (`test_store.py`) | 4 | PASS — add/count, filtro board, filtro composto `$or`, reset |
 | Query + Eval (`test_query_eval.py`) | 13 | PASS — board/micro obbligatori, `$in` su scope/layer/costruttore, composizione strati, fall-through comune (`X OR ABSENT`) anche end-to-end via indexer, recall@k |
-| Retriever node (`test_retriever_node.py`) | 5 | PASS — popolamento `full_context`+debug, cap budget, skip senza board/micro, **arricchimento query nel repair loop**, nessun arricchimento su compile riuscito |
+| Retriever node (`test_retriever_node.py`) | 6 | PASS — popolamento `full_context`+debug, cap budget, skip senza board/micro, **arricchimento query nel repair loop**, nessun arricchimento su compile riuscito, **alias `retrieve_context is retrieve`** (identità + stesso `full_context`) |
 | Inspect CLI (`test_inspect.py`) | 4 | PASS — `list_chunks` metadati/filtro/testo, `--json`, `--group-by` |
-| **Totale** | **51** | **PASS** |
+| **Totale** | **52** | **PASS** |
 
 Copertura di codice (coverage %) misurata: N/D (non configurata `pytest-cov`).
 
@@ -240,6 +240,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 | 9 | onboarding | Portabilità: `requirements-rag.txt` auto-contenuto; nota portabilità in README/audit |
 | 10 | onboarding | Fix packaging/onboarding (clone pulito): eccezione `!.env.rag.template` in `.gitignore` (il template era catturato da `.env.*` e non finiva nel repo), esclusione indice `.rag_index/`, `conftest.py` di root per import robusto, quick-start README riordinato (install → test offline → env → index) |
 | 11 | repo cleanup | `.env.rag.template` **force-added** all'index (la sola negazione gitignore non basta: git non auto-aggiunge un file prima ignorato); rimosso lo scaffold web non usato (`backend/`, `frontend/`, `memory/`, `test_reports/`, `test_result.md`, `.gitconfig`); `.emergent/` escluso dal repo ma mantenuto su disco. Repo ora auto-contenuto: solo motore RAG + test + script + docs + template |
+| 12 | `06db6a9`+ | Doppio nome del nodo: aggiunto alias di identità `retrieve_context = retrieve` (entrambi in `__all__`) in `retriever_node.py` — la pipeline reale registra il nodo come `retrieve_context`, ora il modulo lega a qualunque chiave senza rinomina né duplicazione di logica; +1 test (`test_retrieve_context_alias`, identità + stesso `full_context`) → 52 PASS |
 
 *Nota: la mappatura step→commit è ricostruita dalla cronologia ed è indicativa; gli step 9–10 sono fix di packaging/onboarding senza modifiche ai 3 file core.*
 
@@ -249,7 +250,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 
 | ID | Area | Problema | Priorità |
 |---|---|---|---|
-| DT-01 | Integrazione agente | `AgentState`/dimensioni di sessione (board/micro/scope) non ancora cablate al classificatore reale; lette da `state`/env con fallback (`# TODO (human)`). Fuori ambito ma bloccante per la produzione. **Passi di cablaggio ora documentati in `INTEGRATION.md`** (nome nodo `retrieve` vs `retrieve_context`, `target_headers`, popolamento dimensioni, `build_index.py` su repo reale). | P1 |
+| DT-01 | Integrazione agente | `AgentState`/dimensioni di sessione (board/micro/scope) non ancora cablate al classificatore reale; lette da `state`/env con fallback (`# TODO (human)`). Fuori ambito ma bloccante per la produzione. **Passi di cablaggio documentati in `INTEGRATION.md`**; il **nome nodo è risolto**: il modulo espone sia `retrieve` sia `retrieve_context` (alias di identità), quindi nessuna rinomina necessaria. Restano `target_headers` e il popolamento dimensioni dal classificatore. | P1 |
 | DT-02 | Qualità retrieval | `EVAL_SET` contiene solo 2 placeholder; recall@k non misurabile su casi reali finché non popolato. | P1 |
 | DT-03 | Metadati da path | `infer_layer` è euristica iniziale; da calibrare sul layout reale dei repo (`# TODO (human)`). | P1 |
 | DT-04 | Chunking | Tuning strategia chunking (commenti doc, funzioni molto grandi, contesto a livello file) da calibrare (`# TODO (human)`). | P2 |
@@ -298,7 +299,7 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 - Modello a strati componibile (`$in` su scope/layer/costruttore) e fall-through `comune` corretto e testato anche end-to-end.
 - Repair loop consapevole dell'errore: la query viene arricchita con una forma concisa (cap 300 char) dell'errore di compile, così il retrieval propone esempi pertinenti alla correzione invece di ripetere il primo passaggio.
 - Portabilità verificata: componente auto-contenuto (`requirements-rag.txt`), pure Python, senza percorsi assoluti né accoppiamento all'ambiente; suite eseguita con successo anche da una directory esterna a quella di sviluppo.
-- Suite di test offline deterministica (36 PASS) eseguibile senza runtime/rete grazie al `FakeEmbedder`.
+- Suite di test offline deterministica (52 PASS) eseguibile senza runtime/rete grazie al `FakeEmbedder`.
 
 **Rischi tecnici**
 - Dipendenza da un runtime di embedding esterno non incluso: senza di esso il percorso online reale non è esercitabile (mitigato nei test dal fake, ma non in produzione).
@@ -311,9 +312,9 @@ Nessuna pipeline CI/CD presente (assenza di `.github/`, `.gitlab-ci.yml`, ecc.).
 1. Popolare `EVAL_SET` e stabilire una baseline recall@k prima di calibrare chunking/metadati.
 2. Cablare le dimensioni di sessione dal classificatore reale e indicizzare un repo pilota per validare `infer_layer` e il modello a strati.
 3. Introdurre CI minima (lint + pytest) e `pytest-cov`, e valutare retry/backoff verso il runtime embedding.
-4. Validazione finale di onboarding: clone reale da GitHub su macchina del team (Windows) → README fino a `36 passed` (la simulazione locale di clone pulito è un buon proxy ma gira in ambiente già configurato).
+4. Validazione finale di onboarding: clone reale da GitHub su macchina del team (Windows) → README fino a `52 passed` (la simulazione locale di clone pulito è un buon proxy ma gira in ambiente già configurato).
 
 Nel complesso: scaffolding maturo, revisionato e in stato di **hold** (iterazioni concluse), pronto per la revisione umana e l'estensione; il debito residuo è prevalentemente di **calibrazione di dominio** (P1/P2 attesi) più alcune voci di **igiene di progetto** (P3), senza criticità bloccanti nel codice consegnato. Il prossimo passo utile (`INTEGRATION.md`) richiede un indice reale e un `EVAL_SET` reale su cui misurare.
 
 ---
-*Fine audit tecnico. Ultimo aggiornamento: 2026-06-16 (git `main` @ `bb771dd`).*
+*Fine audit tecnico. Ultimo aggiornamento: 2026-06-30 (git `main` @ `06db6a9`; alias `retrieve_context`, 52 test).*
