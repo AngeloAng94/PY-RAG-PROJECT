@@ -312,3 +312,11 @@ def retrieve(state: AgentState) -> AgentState:
     state["retrieved_chunks"] = retrieved
     state["retrieval_debug"] = debug
     return state
+
+
+# Alias: the real agent pipeline registers this node as ``retrieve_context``.
+# Same signature, same contract, same implementation — exposed under both names
+# so the module is drop-in regardless of which key the graph expects.
+retrieve_context = retrieve
+
+__all__ = ["retrieve", "retrieve_context"]

@@ -140,3 +140,24 @@ def test_successful_compile_does_not_enrich_query(indexed_env):
     out = rn.retrieve(state)
     assert out["retrieval_debug"]["repair_pass"] is False
     assert out["retrieval_debug"]["query"] == "draw header label"
+
+
+
+def test_retrieve_context_alias(indexed_env):
+    # The real pipeline registers the node as ``retrieve_context``; it must be
+    # the exact same implementation as ``retrieve``.
+    assert rn.retrieve_context is rn.retrieve
+
+    state = {
+        "user_request": "draw header label coffee screen",
+        "target_view": "caffe",
+        "target_file": indexed_env,
+        "source_content": SAMPLE_C,
+        "board": "ASY011",
+        "micro": "STM32H750",
+        "categoria": "caffe",
+        "scope": "categoria",
+    }
+    out = rn.retrieve_context(dict(state))
+    assert out["full_context"]
+    assert "TARGET FILE" in out["full_context"]
