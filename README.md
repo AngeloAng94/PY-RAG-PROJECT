@@ -20,6 +20,8 @@ requirements-rag.txt    self-contained dependencies
 .env.rag.template       documented config template (copy to .env)
 INTEGRATION.md          how to wire this to the real agent
 AUDIT_TECNICO_PY.md     technical audit (IT)
+GUIDA_SETUP_RAG.md          setup guide, from zero (IT)
+GUIDA_ETICHETTATURA_RAG.md  how to populate/label the index (IT)
 ```
 
 ## Quick start (from a fresh clone, project root)
@@ -48,3 +50,4 @@ model, indexing rules, asset auto-skip, repair loop) and
   so it binds to the graph regardless of the registered node name — same signature, same logic.
 
 Author: Angelo Anglani.
+
