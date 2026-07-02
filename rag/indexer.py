@@ -283,6 +283,7 @@ def index_repo(
     exclude: Optional[List[str]] = None,
     include: Optional[List[str]] = None,
     include_data: bool = False,
+    progress: bool = True,
 ) -> Dict[str, object]:
     """Walk ``repo_path`` and index every .c/.h file.
 
@@ -300,6 +301,10 @@ def index_repo(
     Resilient: if a single file fails to embed/store (e.g. an embedding HTTP
     timeout), it is logged and skipped (``skipped_error``) and the walk
     continues — a long build is never lost to one bad file.
+
+    ``progress=True`` (default) prints one line per file to stdout so a long
+    CPU-bound run over thousands of files shows it is alive (a pre-scan count
+    plus ``[i/N] indexing/skipped …``). Set ``progress=False`` for silent runs.
 
     Returns ``{"files", "chunks", "skipped_data", "skipped_error",
     "skipped_excluded"}``. Set ``reset=True`` for a full rebuild.
@@ -321,51 +326,73 @@ def index_repo(
     skipped_error: List[Dict[str, str]] = []
     skipped_excluded: List[Dict[str, str]] = []
 
+    # Pre-scan: collect the candidate .c/.h files (after applying --exclude) so
+    # we can report a total up front and number each file as we go.
+    candidates: List[str] = []
     for root, _dirs, files in os.walk(repo_path):
         for name in sorted(files):
             if not name.endswith(_C_EXTENSIONS):
                 continue
             file_path = os.path.join(root, name)
-
-            # 1) Explicit manual exclusion wins.
             excl_pattern = _matches_globs(file_path, repo_path, exclude)
             if excl_pattern:
                 logger.info("skipped %s: excluded by pattern %r", name, excl_pattern)
                 skipped_excluded.append({"file": file_path, "pattern": excl_pattern})
                 continue
+            candidates.append(file_path)
+    candidates.sort()
 
-            # 2) Force-index overrides the data heuristic (global flag or glob).
-            forced = include_data or bool(_matches_globs(file_path, repo_path, include))
+    total = len(candidates)
+    if progress:
+        print(
+            f"[build_index] found {total} files to index, "
+            f"{len(skipped_excluded)} excluded",
+            flush=True,
+        )
 
-            # 3) Content-based data detection (unless forced).
-            if not forced:
-                try:
-                    with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
-                        source = fh.read()
-                except Exception as exc:
-                    error = f"{type(exc).__name__}: {exc}"
-                    logger.warning("Skipping %s — could not read: %s", file_path, error)
-                    skipped_error.append({"file": file_path, "error": error})
-                    continue
-                reason = looks_like_data(source, max_data_line_chars)
-                if reason:
-                    logger.info("skipped %s: %s", name, reason)
-                    skipped_data.append({"file": file_path, "reason": reason})
-                    continue
+    for i, file_path in enumerate(candidates, start=1):
+        rel = os.path.relpath(file_path, repo_path)
 
-            # 4) Index (resilient to per-file embedding/store failures).
+        # Force-index overrides the data heuristic (global flag or glob).
+        forced = include_data or bool(_matches_globs(file_path, repo_path, include))
+
+        # Content-based data detection (unless forced).
+        if not forced:
             try:
-                count = index_file(
-                    file_path, store, embedder, base_metadata, max_chunk_chars
-                )
-            except Exception as exc:  # don't abort the whole build on one file
+                with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+                    source = fh.read()
+            except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
-                logger.warning("Skipping %s — embedding/index failed: %s", file_path, error)
+                logger.warning("Skipping %s — could not read: %s", file_path, error)
                 skipped_error.append({"file": file_path, "error": error})
+                if progress:
+                    print(f"[{i}/{total}] skipped {rel} (error)", flush=True)
                 continue
-            if count:
-                files_indexed += 1
-                chunks_indexed += count
+            reason = looks_like_data(source, max_data_line_chars)
+            if reason:
+                logger.info("skipped %s: %s", os.path.basename(file_path), reason)
+                skipped_data.append({"file": file_path, "reason": reason})
+                if progress:
+                    print(f"[{i}/{total}] skipped {rel} (data)", flush=True)
+                continue
+
+        # Index (resilient to per-file embedding/store failures).
+        try:
+            count = index_file(
+                file_path, store, embedder, base_metadata, max_chunk_chars
+            )
+        except Exception as exc:  # don't abort the whole build on one file
+            error = f"{type(exc).__name__}: {exc}"
+            logger.warning("Skipping %s — embedding/index failed: %s", file_path, error)
+            skipped_error.append({"file": file_path, "error": error})
+            if progress:
+                print(f"[{i}/{total}] skipped {rel} (error)", flush=True)
+            continue
+        if count:
+            files_indexed += 1
+            chunks_indexed += count
+        if progress:
+            print(f"[{i}/{total}] indexing {rel} (chunks={count})", flush=True)
 
     return {
         "files": files_indexed,

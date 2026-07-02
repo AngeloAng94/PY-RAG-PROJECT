@@ -227,3 +227,35 @@ def test_summary_reports_data_and_error_separately(tmp_path):
     assert summary["skipped_data"][0]["file"].endswith("img6.c")
     assert summary["skipped_error"][0]["file"].endswith("bad.c")
 
+
+def test_index_repo_prints_progress(tmp_path, capsys):
+    # A few normal modules + one data file to exercise both progress lines.
+    _normal_module(tmp_path, "clock")
+    _normal_module(tmp_path, "timer")
+    _img_descriptor_with_long_line(tmp_path, "img6")  # -> skipped (data)
+    store = ChromaStore(index_path=str(tmp_path / "idx"))
+    store.reset()
+
+    index_repo(str(tmp_path), store, FakeEmbedder(),
+               base_metadata={"board": "ASY011", "micro": "STM32H750"}, reset=True)
+
+    out = capsys.readouterr().out
+    # (1) pre-scan total count line (3 candidate .c files, 0 excluded).
+    assert "found 3 files to index, 0 excluded" in out
+    # (2) per-file progress lines: an indexing line and a data-skip line.
+    assert "[1/3]" in out and "[3/3]" in out
+    assert "indexing clock.c (chunks=" in out
+    assert "skipped img6.c (data)" in out
+
+
+def test_index_repo_progress_can_be_silenced(tmp_path, capsys):
+    _normal_module(tmp_path, "clock")
+    store = ChromaStore(index_path=str(tmp_path / "idx"))
+    store.reset()
+    index_repo(str(tmp_path), store, FakeEmbedder(),
+               base_metadata={"board": "ASY011", "micro": "STM32H750"},
+               reset=True, progress=False)
+    out = capsys.readouterr().out
+    assert "found" not in out
+    assert "[1/1]" not in out
+
