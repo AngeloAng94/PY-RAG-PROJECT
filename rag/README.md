@@ -92,7 +92,7 @@ Run these from the **project root** on a fresh clone:
 pip install -r requirements-rag.txt
 
 # 2. Verify the install — runs fully offline (deterministic FakeEmbedder, no runtime/network)
-python -m pytest tests/rag -q          # expect: 36 passed
+python -m pytest tests/rag -q          # expect: 54 passed
 
 # 3. Create your local config from the committed template
 cp .env.rag.template .env              # then edit RAG_EMBED_BASE_URL to point at your local embed runtime
@@ -105,6 +105,11 @@ python scripts/build_index.py --repo /path/to/firmware \
 
 > Steps 1–2 need no embedding runtime and no `.env`. Only steps 3–4 (real
 > indexing/retrieval) require a running local embedder.
+
+> **Progress feedback:** the build prints an upfront count
+> (`found N files to index, M excluded`) and one line per file
+> (`[i/N] indexing/skipped <path> …`), so long runs are visibly alive.
+> Pass `progress=False` to `index_repo()` for silent/programmatic use.
 
 `.env` keys (all documented in `.env.rag.template`): `RAG_INDEX_PATH`,
 `RAG_EMBED_PROVIDER`, `RAG_EMBED_MODEL`, `RAG_EMBED_BASE_URL`,
