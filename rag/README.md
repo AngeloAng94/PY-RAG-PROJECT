@@ -10,7 +10,7 @@ classify → retrieve → plan → generate → patch → compile → repair →
                    retrieve(state: AgentState) -> AgentState
 ```
 
-**Status:** scaffolding complete & reviewed · **52 tests passing** (offline) ·
+**Status:** scaffolding complete & reviewed · **54 tests passing** (offline) ·
 local-first (no data leaves the machine by default).
 For wiring this to the real agent, see [`/INTEGRATION.md`](../INTEGRATION.md).
 

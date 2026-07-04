@@ -26,7 +26,7 @@ AUDIT_TECNICO_PY.md     technical audit (IT)
 
 ```bash
 pip install -r requirements-rag.txt
-python -m pytest tests/rag -q          # expect: 52 passed (offline, no runtime/network)
+python -m pytest tests/rag -q          # expect: 54 passed (offline, no runtime/network)
 cp .env.rag.template .env              # then point RAG_EMBED_BASE_URL at your local embedder
 python scripts/build_index.py --repo /path/to/firmware \
     --board ASY011 --micro STM32H750 --scope categoria --categoria caffe --reset
@@ -41,7 +41,8 @@ model, indexing rules, asset auto-skip, repair loop) and
 - **Filter-before-similarity**, `board`+`micro` mandatory (never cross a board boundary).
 - **Layered scope** (`comune`/`categoria`/`cliente`) with shared-code fall-through (`ABSENT`).
 - **Robust indexing**: configurable embed timeout, oversized-chunk splitting, per-file
-  resilience, and **content-based auto-skip of image-as-C / generated data files**.
+  resilience, **content-based auto-skip of image-as-C / generated data files**, and
+  **live progress feedback** (`found N files…` pre-scan + `[i/N] indexing/skipped …` per file).
 - **Local-first**: by default nothing leaves the machine; same embedder for index and query.
 
 - **Drop-in node** exposed as both `retrieve` and `retrieve_context` (identity alias)

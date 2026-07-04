@@ -115,6 +115,12 @@ heuristic wrongly flags. The CLI prints `skipped_data` / `skipped_excluded` /
 threshold with `RAG_MAX_DATA_LINE_CHARS` and the embed timeout with
 `RAG_EMBED_TIMEOUT` (see `rag/README.md`).
 
+**Live progress.** A large repo on a CPU embedder can take a long time. The
+build now prints a pre-scan total (`found N files to index, M excluded`) and one
+line per file (`[i/N] indexing <rel> (chunks=k)` or `[i/N] skipped <rel>
+(data|error)`), flushed immediately — so you can always tell it is alive, not
+hung. Pass `progress=False` to `index_repo(...)` for a silent programmatic run.
+
 **Same embedder for index and query**: whatever `RAG_EMBED_PROVIDER` /
 `RAG_EMBED_MODEL` you index with MUST be used at query time. Changing the
 embedding model means re-indexing from scratch.
